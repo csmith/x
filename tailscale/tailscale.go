@@ -9,8 +9,8 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"time"
 
+	xhttp "chameth.com/x/http"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/tsnet"
 )
@@ -72,8 +72,6 @@ type Listener interface {
 	ListenTLS(network, addr string) (net.Listener, error)
 }
 
-const shutdownTimeout = 10 * time.Second
-
 // Serve serves handler over HTTPS on port 443 of s, and redirects plain HTTP
 // on port 80 to the same path at https://name, until ctx is done. name should
 // be the node's full MagicDNS name, as returned by [Up], as that's the name on
@@ -94,54 +92,18 @@ func Serve(ctx context.Context, s Listener, name string, handler http.Handler) e
 	}
 
 	slog.Info("Serving on the tailnet", "url", "https://"+name)
-	return serveAll(
-		ctx,
-		listening{newHTTPServer(redirectToHTTPS(name)), httpListener},
-		listening{newHTTPServer(handler), httpsListener},
-	)
-}
 
-type listening struct {
-	server   *http.Server
-	listener net.Listener
-}
-
-func serveAll(ctx context.Context, servers ...listening) error {
-	errs := make(chan error, len(servers))
-	for _, s := range servers {
-		go func() { errs <- s.server.Serve(s.listener) }()
-	}
-
-	var failed error
-	select {
-	case failed = <-errs:
-	case <-ctx.Done():
-	}
-
-	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
+	// Each server stops the other when it stops.
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	for _, s := range servers {
-		if err := s.server.Shutdown(shutdownCtx); err != nil {
-			_ = s.server.Close()
-			if failed == nil {
-				failed = fmt.Errorf("shut down: %w", err)
-			}
-		}
+	errs := make(chan error, 2)
+	serve := func(handler http.Handler, listener net.Listener) {
+		errs <- xhttp.Serve(ctx, &http.Server{Handler: handler}, listener)
+		cancel()
 	}
-	if failed != nil && !errors.Is(failed, http.ErrServerClosed) {
-		return failed
-	}
-	return nil
-}
-
-// There's no read or write timeout, as they'd cut off slow uploads and
-// long-lived responses such as server-sent events.
-func newHTTPServer(handler http.Handler) *http.Server {
-	return &http.Server{
-		Handler:           handler,
-		ReadHeaderTimeout: 10 * time.Second,
-		IdleTimeout:       2 * time.Minute,
-	}
+	go serve(redirectToHTTPS(name), httpListener)
+	go serve(handler, httpsListener)
+	return errors.Join(<-errs, <-errs)
 }
 
 func redirectToHTTPS(name string) http.Handler {
