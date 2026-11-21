@@ -1,4 +1,4 @@
-package http
+package oidc
 
 import (
 	"context"
@@ -18,8 +18,6 @@ import (
 const testAudience = "https://service.example"
 
 var testNow = time.Date(2026, 11, 8, 14, 0, 0, 0, time.UTC)
-
-type subjectKey struct{}
 
 func newVerifier(t *testing.T, p *oidctest.Provider) *BearerVerifier {
 	t.Helper()

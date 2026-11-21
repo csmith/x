@@ -1,6 +1,6 @@
 // Package oidc authenticates with an OpenID Connect provider: services getting
-// access tokens for other services' APIs, and people logging in to a service's
-// web pages.
+// access tokens for other services' APIs, services checking the access tokens
+// they're sent, and people logging in to a service's web pages.
 package oidc
 
 import (

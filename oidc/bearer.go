@@ -1,6 +1,4 @@
-// Package http has helpers for HTTP servers: verifying bearer tokens and
-// signing cookies.
-package http
+package oidc
 
 import (
 	"context"

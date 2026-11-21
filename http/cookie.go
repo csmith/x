@@ -1,3 +1,4 @@
+// Package http has helpers for HTTP servers, such as signed cookies.
 package http
 
 import (

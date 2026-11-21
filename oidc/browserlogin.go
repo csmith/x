@@ -89,7 +89,7 @@ type BrowserLoginConfig struct {
 //
 // Optionally, some or all paths also take RFC 9068 access tokens sent as
 // "Authorization: Bearer <token>", with the service's URL as their audience,
-// for other services calling an API; see [xhttp.BearerVerifier].
+// for other services calling an API; see [BearerVerifier].
 //
 // Requests let through with a session are also protected against cross-origin
 // requests by [http.CrossOriginProtection], so another site can't make
@@ -106,7 +106,7 @@ type BrowserLogin struct {
 	bearerPrefix   string
 	bearerAnywhere bool
 	withSubject    func(context.Context, string) context.Context
-	bearer         *xhttp.BearerVerifier
+	bearer         *BearerVerifier
 	crossOrigin    *http.CrossOriginProtection
 	now            func() time.Time
 
@@ -177,8 +177,8 @@ func NewBrowserLogin(cfg BrowserLoginConfig) (*BrowserLogin, error) {
 		l.expiry = ExpireDailyAt(5, london)
 	}
 	if cfg.BearerPrefix != "" || cfg.BearerAnywhere {
-		l.bearer, err = xhttp.NewBearerVerifier(
-			xhttp.BearerConfig{
+		l.bearer, err = NewBearerVerifier(
+			BearerConfig{
 				Issuer:       cfg.Issuer,
 				AudienceFunc: baseURL,
 				WithSubject:  cfg.WithSubject,
