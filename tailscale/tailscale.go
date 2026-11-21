@@ -16,17 +16,36 @@ import (
 )
 
 // NewServer returns a tsnet server with the given hostname, state directory
-// and auth key, logging through the default slog logger. Messages meant for
-// the user (such as login URLs) are logged at info level, and backend chatter
-// at debug level. Empty dir and authKey leave tsnet's defaults in place.
-func NewServer(hostname, dir, authKey string) *tsnet.Server {
+// and auth key, logging through slog. Messages meant for the user (such as
+// login URLs) are logged at info level, and backend chatter at debug level.
+// Empty dir and authKey leave tsnet's defaults in place.
+//
+// Without [WithLogger], it logs through the default logger as it is when
+// NewServer is called, with a component=tailscale attribute.
+func NewServer(hostname, dir, authKey string, opts ...Option) *tsnet.Server {
+	o := serverOptions{logger: slog.Default().With("component", "tailscale")}
+	for _, opt := range opts {
+		opt(&o)
+	}
 	return &tsnet.Server{
 		Hostname: hostname,
 		Dir:      dir,
 		AuthKey:  authKey,
-		UserLogf: logf(slog.LevelInfo),
-		Logf:     logf(slog.LevelDebug),
+		UserLogf: logf(o.logger, slog.LevelInfo),
+		Logf:     logf(o.logger, slog.LevelDebug),
 	}
+}
+
+// Option configures [NewServer].
+type Option func(*serverOptions)
+
+type serverOptions struct {
+	logger *slog.Logger
+}
+
+// WithLogger logs through logger as given, adding no attributes.
+func WithLogger(logger *slog.Logger) Option {
+	return func(o *serverOptions) { o.logger = logger }
 }
 
 // Upper is the part of [tsnet.Server] that [Up] uses.
@@ -133,13 +152,12 @@ func redirectToHTTPS(name string) http.Handler {
 	)
 }
 
-func logf(level slog.Level) func(format string, args ...any) {
+func logf(logger *slog.Logger, level slog.Level) func(format string, args ...any) {
 	return func(format string, args ...any) {
-		logger := slog.Default()
 		if !logger.Enabled(context.Background(), level) {
 			return
 		}
 		msg := strings.TrimSuffix(fmt.Sprintf(format, args...), "\n")
-		logger.Log(context.Background(), level, msg, "source", "tailscale")
+		logger.Log(context.Background(), level, msg)
 	}
 }

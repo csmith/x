@@ -209,25 +209,27 @@ func TestServe_returnsServeErrors(t *testing.T) {
 	assert.ErrorIs(t, err, net.ErrClosed)
 }
 
-func TestNewServer_routesLogsToSlog(t *testing.T) {
-	var buf bytes.Buffer
-	previous := slog.Default()
-	slog.SetDefault(
-		slog.New(
-			slog.NewTextHandler(
-				&buf,
-				&slog.HandlerOptions{
-					Level: slog.LevelDebug,
-					ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
-						if a.Key == slog.TimeKey {
-							return slog.Attr{}
-						}
-						return a
-					},
+func newTestLogger(buf *bytes.Buffer) *slog.Logger {
+	return slog.New(
+		slog.NewTextHandler(
+			buf,
+			&slog.HandlerOptions{
+				Level: slog.LevelDebug,
+				ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
+					if a.Key == slog.TimeKey {
+						return slog.Attr{}
+					}
+					return a
 				},
-			),
+			},
 		),
 	)
+}
+
+func TestNewServer_routesLogsToDefaultLogger(t *testing.T) {
+	var buf bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(newTestLogger(&buf))
 	t.Cleanup(func() { slog.SetDefault(previous) })
 
 	s := NewServer("node", "/state", "key")
@@ -240,10 +242,29 @@ func TestNewServer_routesLogsToSlog(t *testing.T) {
 
 	assert.Equal(
 		t,
-		"level=INFO msg=\"visit https://login.example to log in\" source=tailscale\n"+
-			"level=DEBUG msg=\"backend 42\" source=tailscale\n",
+		"level=INFO msg=\"visit https://login.example to log in\" component=tailscale\n"+
+			"level=DEBUG msg=\"backend 42\" component=tailscale\n",
 		buf.String(),
 	)
+}
+
+func TestNewServer_routesLogsToGivenLogger(t *testing.T) {
+	var defaultBuf, buf bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(newTestLogger(&defaultBuf))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	s := NewServer("node", "", "", WithLogger(newTestLogger(&buf).With("node", "a")))
+	s.UserLogf("visit %s to log in\n", "https://login.example")
+	s.Logf("backend %d", 42)
+
+	assert.Equal(
+		t,
+		"level=INFO msg=\"visit https://login.example to log in\" node=a\n"+
+			"level=DEBUG msg=\"backend 42\" node=a\n",
+		buf.String(),
+	)
+	assert.Empty(t, defaultBuf.String())
 }
 
 func TestNewServer_skipsDisabledLevels(t *testing.T) {
