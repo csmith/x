@@ -4,6 +4,7 @@
 
 - Add `file.WalkGitProjects` and `file.EnclosingGitProject` for finding git projects
 - Add `http.ServeLocalListener` for serving locally on a listener the caller opened
+- Add `smtp` package for sending mail bounded by a context
 - Add `temporal` package for building Temporal client options with token credentials
 - Add `text` package for line diffs, with context hunks and unified output
 - `desktop.Launch` now takes its arguments as a slice, followed by options to connect the program's standard streams
