@@ -52,7 +52,7 @@ type BearerVerifier struct {
 	now         func() time.Time
 
 	mu       sync.Mutex
-	verifier *oidc.IDTokenVerifier
+	verifier *tokenVerifier
 }
 
 // NewBearerVerifier checks cfg and returns a BearerVerifier for it. The
@@ -149,10 +149,9 @@ func (v *BearerVerifier) Verify(ctx context.Context, raw string) (*AccessToken, 
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrBearerUnavailable, err)
 	}
-	var fetchErr error
-	id, err := verifier.Verify(context.WithValue(ctx, keyFetchErrorKey{}, &fetchErr), raw)
-	if fetchErr != nil {
-		return nil, fmt.Errorf("%w: fetch signing keys: %w", ErrBearerUnavailable, fetchErr)
+	id, err := verifier.Verify(ctx, raw)
+	if errors.Is(err, errKeysUnavailable) {
+		return nil, fmt.Errorf("%w: %w", ErrBearerUnavailable, err)
 	}
 	if err != nil {
 		return nil, err
@@ -163,7 +162,7 @@ func (v *BearerVerifier) Verify(ctx context.Context, raw string) (*AccessToken, 
 	return &AccessToken{Subject: id.Subject, Expiry: id.Expiry, idToken: id}, nil
 }
 
-func (v *BearerVerifier) discover(ctx context.Context) (*oidc.IDTokenVerifier, error) {
+func (v *BearerVerifier) discover(ctx context.Context) (*tokenVerifier, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if v.verifier != nil {
@@ -177,18 +176,10 @@ func (v *BearerVerifier) discover(ctx context.Context) (*oidc.IDTokenVerifier, e
 	if err != nil {
 		return nil, fmt.Errorf("discover OIDC provider: %w", err)
 	}
-	var metadata struct {
-		KeysURL    string   `json:"jwks_uri"`
-		Algorithms []string `json:"id_token_signing_alg_values_supported"`
+	v.verifier, err = newTokenVerifier(provider, v.issuer, oidc.Config{ClientID: audience, Now: v.now})
+	if err != nil {
+		return nil, err
 	}
-	if err := provider.Claims(&metadata); err != nil {
-		return nil, fmt.Errorf("read OIDC provider metadata: %w", err)
-	}
-	v.verifier = oidc.NewVerifier(
-		v.issuer,
-		reportingKeySet{oidc.NewRemoteKeySet(providerContext(context.Background()), metadata.KeysURL)},
-		&oidc.Config{ClientID: audience, Now: v.now, SupportedSigningAlgs: metadata.Algorithms},
-	)
 	return v.verifier, nil
 }
 
@@ -196,6 +187,43 @@ func (v *BearerVerifier) discover(ctx context.Context) (*oidc.IDTokenVerifier, e
 // lock that every caller waits on.
 func providerContext(ctx context.Context) context.Context {
 	return oidc.ClientContext(ctx, &http.Client{Timeout: defaultTimeout})
+}
+
+// errKeysUnavailable is wrapped by errors from tokenVerifier.Verify when the
+// provider's signing keys could not be fetched, so the token was not checked.
+var errKeysUnavailable = errors.New("the provider's signing keys could not be fetched")
+
+// tokenVerifier verifies JWTs signed with the provider's keys, telling a
+// failure to fetch the keys apart from a bad token.
+type tokenVerifier struct {
+	verifier *oidc.IDTokenVerifier
+}
+
+func newTokenVerifier(provider *oidc.Provider, issuer string, config oidc.Config) (*tokenVerifier, error) {
+	var metadata struct {
+		KeysURL    string   `json:"jwks_uri"`
+		Algorithms []string `json:"id_token_signing_alg_values_supported"`
+	}
+	if err := provider.Claims(&metadata); err != nil {
+		return nil, fmt.Errorf("read OIDC provider metadata: %w", err)
+	}
+	config.SupportedSigningAlgs = metadata.Algorithms
+	return &tokenVerifier{
+		verifier: oidc.NewVerifier(
+			issuer,
+			reportingKeySet{oidc.NewRemoteKeySet(providerContext(context.Background()), metadata.KeysURL)},
+			&config,
+		),
+	}, nil
+}
+
+func (v *tokenVerifier) Verify(ctx context.Context, raw string) (*oidc.IDToken, error) {
+	var fetchErr error
+	id, err := v.verifier.Verify(context.WithValue(ctx, keyFetchErrorKey{}, &fetchErr), raw)
+	if fetchErr != nil {
+		return nil, fmt.Errorf("%w: %w", errKeysUnavailable, fetchErr)
+	}
+	return id, err
 }
 
 type keyFetchErrorKey struct{}

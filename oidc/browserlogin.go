@@ -123,7 +123,7 @@ type BrowserLogin struct {
 // the base URL.
 type discovery struct {
 	oauth  *oauth2.Config
-	id     *oidc.IDTokenVerifier
+	id     *tokenVerifier
 	secure bool
 }
 
@@ -375,6 +375,11 @@ func (l *BrowserLogin) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, err := d.id.Verify(r.Context(), raw)
+	if errors.Is(err, errKeysUnavailable) {
+		slog.Error("Failed to check login ID token", "error", err)
+		http.Error(w, "Login is unavailable", http.StatusBadGateway)
+		return
+	}
 	if err != nil || id.Nonce != p.Nonce {
 		slog.Warn("Rejected login ID token", "error", err)
 		http.Error(w, "Login failed", http.StatusForbidden)
@@ -415,6 +420,10 @@ func (l *BrowserLogin) discover(ctx context.Context) (*discovery, error) {
 	if err != nil {
 		return nil, fmt.Errorf("discover OIDC provider: %w", err)
 	}
+	id, err := newTokenVerifier(provider, l.issuer, oidc.Config{ClientID: l.clientID, Now: l.now})
+	if err != nil {
+		return nil, err
+	}
 	l.discovery = &discovery{
 		oauth: &oauth2.Config{
 			ClientID:     l.clientID,
@@ -423,7 +432,7 @@ func (l *BrowserLogin) discover(ctx context.Context) (*discovery, error) {
 			RedirectURL:  base + CallbackPath,
 			Scopes:       []string{oidc.ScopeOpenID},
 		},
-		id:     provider.Verifier(&oidc.Config{ClientID: l.clientID, Now: l.now}),
+		id:     id,
 		secure: strings.HasPrefix(base, "https://"),
 	}
 	return l.discovery, nil

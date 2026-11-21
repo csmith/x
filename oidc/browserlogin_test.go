@@ -439,6 +439,19 @@ func TestBrowserLogin_providerDownIsRetried(t *testing.T) {
 	assert.Equal(t, http.StatusFound, h.do(http.MethodGet, "/").Code)
 }
 
+func TestBrowserLogin_keysDownIsUnavailable(t *testing.T) {
+	h := newLoginHarness(t, nil)
+	state := h.startLogin("/things")
+	h.provider.SetKeysDown(true)
+	assert.Equal(t, http.StatusBadGateway, h.callback(state).Code)
+	assert.NotContains(t, h.cookies, sessionCookie)
+
+	h.provider.SetKeysDown(false)
+	rec := h.logIn()
+	require.Equal(t, http.StatusFound, rec.Code)
+	assert.Contains(t, h.cookies, sessionCookie)
+}
+
 func TestBrowserLogin_baseURLFunc(t *testing.T) {
 	calls := 0
 	h := newLoginHarness(
