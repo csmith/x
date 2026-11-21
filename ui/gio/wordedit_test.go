@@ -134,6 +134,29 @@ func TestHandleWordEditingDeletionCanBeUndone(t *testing.T) {
 	assert.Equal(t, "buy milk today", h.ed.Text())
 }
 
+func TestHandleWordEditingDeletionSendsChangeEvent(t *testing.T) {
+	h := newEditorHarness(t)
+	h.ed.SetCaret(14, 14)
+	h.router.Queue(key.Event{Name: key.NameDeleteBackward, Modifiers: key.ModCtrl, State: key.Press})
+	var changeEvents int
+	h.frame(
+		func(gtx layout.Context) {
+			HandleWordEditing(gtx, h.ed)
+			for {
+				ev, ok := h.ed.Update(gtx)
+				if !ok {
+					break
+				}
+				if _, ok := ev.(widget.ChangeEvent); ok {
+					changeEvents++
+				}
+			}
+		},
+	)
+	assert.Equal(t, "buy milk ", h.ed.Text())
+	assert.Equal(t, 1, changeEvents)
+}
+
 func TestHandleWordEditingReadOnly(t *testing.T) {
 	t.Run(
 		"deletion is ignored",

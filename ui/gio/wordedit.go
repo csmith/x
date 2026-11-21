@@ -18,8 +18,9 @@ import (
 //
 // HandleWordEditing must be called each frame before anything else reads ed's
 // events, including ed's own Update and Layout, since Gio gives each key event
-// to the first filter that matches it. It reports whether it changed ed's text,
-// as the editor won't send a ChangeEvent for these edits.
+// to the first filter that matches it. It reports whether it changed ed's text.
+// The editor's next Update also returns a [widget.ChangeEvent] for a deletion,
+// so callers that already handle those can ignore the result.
 func HandleWordEditing(gtx layout.Context, ed *widget.Editor) (changed bool) {
 	for {
 		ev, ok := gtx.Event(
