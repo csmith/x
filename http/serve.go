@@ -86,6 +86,22 @@ func ServeLocal(ctx context.Context, address string, handler http.Handler) error
 		_ = listener.Close()
 		return fmt.Errorf("parse address: %w", err)
 	}
+	return serveLocal(ctx, host, listener, handler)
+}
+
+// ServeLocalListener is [ServeLocal] on a listener the caller has already
+// opened. Requests are accepted only if their Host is the listener's address,
+// or localhost, 127.0.0.1 or [::1] on its port, ignoring case.
+func ServeLocalListener(ctx context.Context, listener net.Listener, handler http.Handler) error {
+	host, _, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		_ = listener.Close()
+		return fmt.Errorf("parse listen address: %w", err)
+	}
+	return serveLocal(ctx, host, listener, handler)
+}
+
+func serveLocal(ctx context.Context, host string, listener net.Listener, handler http.Handler) error {
 	_, port, err := net.SplitHostPort(listener.Addr().String())
 	if err != nil {
 		_ = listener.Close()

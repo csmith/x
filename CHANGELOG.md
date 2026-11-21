@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add `http.ServeLocalListener` for serving locally on a listener the caller opened
+
 ## v0.0.2 - 2026-11-21
 
 - Add `desktop` package for launching programs, opening URLs, the clipboard and per-user directories

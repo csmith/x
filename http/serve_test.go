@@ -266,6 +266,31 @@ func TestServeLocal_checksHostOnListeningPort(t *testing.T) {
 	assert.NoError(t, <-done)
 }
 
+func TestServeLocalListener_checksHostOnBoundPort(t *testing.T) {
+	l := listen(t)
+	address := l.Addr().String()
+	_, port, err := net.SplitHostPort(address)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- ServeLocalListener(ctx, l, http.NotFoundHandler()) }()
+
+	for _, host := range []string{address, "localhost:" + port, "LOCALHOST:" + port, "[::1]:" + port} {
+		status, _, err := get(t.Context(), "http://"+address+"/", host)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusNotFound, status, host)
+	}
+	for _, host := range []string{"attacker.test:" + port, "localhost:0", "localhost"} {
+		status, _, err := get(t.Context(), "http://"+address+"/", host)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusMisdirectedRequest, status, host)
+	}
+
+	cancel()
+	assert.NoError(t, <-done)
+}
+
 func TestCheckHost(t *testing.T) {
 	tests := []struct {
 		host, port, requestHost string
