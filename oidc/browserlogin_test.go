@@ -140,6 +140,13 @@ func TestNewBrowserLogin_requiresConfig(t *testing.T) {
 		"root exempt prefix":   func(c *BrowserLoginConfig) { c.ExemptPrefixes = []string{"/"} },
 		"trailing slash":       func(c *BrowserLoginConfig) { c.ExemptPrefixes = []string{"/static/"} },
 		"unclean bearer path":  func(c *BrowserLoginConfig) { c.BearerPrefix = "/api/" },
+		"base URL with a path": func(c *BrowserLoginConfig) { c.BaseURL = testBase + "/app" },
+		"base URL with query":  func(c *BrowserLoginConfig) { c.BaseURL = testBase + "?x=1" },
+		"base URL with ?":      func(c *BrowserLoginConfig) { c.BaseURL = testBase + "?" },
+		"base URL fragment":    func(c *BrowserLoginConfig) { c.BaseURL = testBase + "#top" },
+		"escaped exempt path":  func(c *BrowserLoginConfig) { c.ExemptPaths = []string{"/a b"} },
+		"escaped prefix":       func(c *BrowserLoginConfig) { c.ExemptPrefixes = []string{"/café"} },
+		"escaped bearer path":  func(c *BrowserLoginConfig) { c.BearerPrefix = "/my api" },
 	}
 	for name, change := range tests {
 		t.Run(
@@ -183,6 +190,34 @@ func TestBrowserLogin_roundTripReturnsToTheOriginalPage(t *testing.T) {
 	rec = h.do(http.MethodGet, "/things/1?tab=logs")
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, oidctest.Subject+" /things/1?tab=logs", rec.Body.String())
+}
+
+func TestBrowserLogin_longReturnURLsAreCutBack(t *testing.T) {
+	tests := map[string]struct {
+		target string
+		want   string
+	}{
+		"query dropped":     {"/things?" + strings.Repeat("a=1&", 1500), "/things"},
+		"path dropped":      {"/" + strings.Repeat("x", 5000) + "?a=1", "/"},
+		"short URL is kept": {"/things?a=1&b=2", "/things?a=1&b=2"},
+	}
+	for name, tt := range tests {
+		t.Run(
+			name,
+			func(t *testing.T) {
+				h := newLoginHarness(t, nil)
+				state := h.startLogin(tt.target)
+				cookie := h.cookies[stateCookiePrefix+state]
+				require.NotNil(t, cookie)
+				assert.LessOrEqual(t, len(cookie.Name)+len(cookie.Value), maxCookieSize)
+
+				rec := h.callback(state)
+
+				require.Equal(t, http.StatusFound, rec.Code)
+				assert.Equal(t, tt.want, rec.Header().Get("Location"))
+			},
+		)
+	}
 }
 
 func TestBrowserLogin_severalTabsLogInAtOnce(t *testing.T) {

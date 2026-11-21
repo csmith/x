@@ -212,6 +212,42 @@ func TestBearerVerifier_Require_providerDownIsRetried(t *testing.T) {
 	assert.Equal(t, http.StatusOK, serve(t, v, header).Code)
 }
 
+func TestBearerVerifier_Require_keysDownIsUnavailableAndRetried(t *testing.T) {
+	p := oidctest.New(t, testNow)
+	v := newVerifier(t, p)
+	header := "Bearer " + p.AccessToken(testAudience, testNow, nil)
+
+	p.SetKeysDown(true)
+	_, err := v.Verify(t.Context(), p.AccessToken(testAudience, testNow, nil))
+	require.ErrorIs(t, err, ErrBearerUnavailable)
+	assert.Equal(t, http.StatusBadGateway, serve(t, v, header).Code)
+
+	p.SetKeysDown(false)
+	assert.Equal(t, http.StatusOK, serve(t, v, header).Code)
+}
+
+func TestBearerVerifier_Verify_unknownKeyIsNotUnavailable(t *testing.T) {
+	p := oidctest.New(t, testNow)
+	v := newVerifier(t, p)
+	other, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	raw := p.Sign(
+		other,
+		"at+jwt",
+		map[string]any{
+			"iss": p.Issuer(),
+			"sub": "service-caller",
+			"aud": testAudience,
+			"exp": testNow.Add(time.Hour).Unix(),
+		},
+	)
+
+	_, err = v.Verify(t.Context(), raw)
+
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, ErrBearerUnavailable)
+}
+
 func TestBearerVerifier_Verify_audienceFuncFailureIsUnavailable(t *testing.T) {
 	p := oidctest.New(t, testNow)
 	calls := 0

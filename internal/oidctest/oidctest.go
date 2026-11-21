@@ -40,6 +40,7 @@ type Provider struct {
 	mu        sync.Mutex
 	now       time.Time
 	down      bool
+	keysDown  bool
 	challenge string
 	nonce     string
 }
@@ -78,6 +79,14 @@ func (p *Provider) SetDown(down bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.down = down
+}
+
+// SetKeysDown makes the signing keys endpoint fail, or work again, while
+// discovery keeps working.
+func (p *Provider) SetKeysDown(down bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.keysDown = down
 }
 
 // SetNonce changes the nonce the next ID token carries.
@@ -160,6 +169,13 @@ func (p *Provider) serveDiscovery(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (p *Provider) serveKeys(w http.ResponseWriter, _ *http.Request) {
+	p.mu.Lock()
+	down := p.keysDown
+	p.mu.Unlock()
+	if down {
+		http.Error(w, "down", http.StatusServiceUnavailable)
+		return
+	}
 	p.writeJSON(
 		w,
 		jose.JSONWebKeySet{

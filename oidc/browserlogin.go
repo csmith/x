@@ -28,6 +28,9 @@ const (
 	sessionCookie     = "auth_session"
 	stateCookiePrefix = "auth_state_"
 	loginTimeout      = 10 * time.Minute
+	// maxCookieSize is the most a cookie's name and value can come to before
+	// browsers drop it.
+	maxCookieSize = 4096
 )
 
 type BrowserLoginConfig struct {
@@ -40,8 +43,10 @@ type BrowserLoginConfig struct {
 	SessionKey string
 
 	// BaseURL is the service's own URL: the base of the callback URL, and the
-	// audience bearer tokens must name. Cookies are marked Secure only if it
-	// is https. Exactly one of BaseURL and BaseURLFunc must be set.
+	// audience bearer tokens must name. It can't have a path, query or
+	// fragment, since the service must be served from the root of its host.
+	// Cookies are marked Secure only if it is https. Exactly one of BaseURL
+	// and BaseURLFunc must be set.
 	BaseURL string
 	// BaseURLFunc gives the base URL on first use, for services that only know
 	// their URL once they are serving. It is called again after a failure.
@@ -128,7 +133,7 @@ type discovery struct {
 // the next request.
 //
 // Exempt paths and the bearer prefix must be absolute and already clean, as
-// path.Clean leaves them, and not the root. A request for any other spelling of
+// path.Clean leaves them, not the root, and need no percent-encoding. A request for any other spelling of
 // a path, such as "/static/../admin" or "/x/%2E%2E%2Fmetrics", is never exempt
 // and never counted as under the bearer prefix.
 func NewBrowserLogin(cfg BrowserLoginConfig) (*BrowserLogin, error) {
@@ -306,15 +311,24 @@ func (l *BrowserLogin) redirectToProvider(w http.ResponseWriter, r *http.Request
 	p := pending{
 		Verifier: oauth2.GenerateVerifier(),
 		Nonce:    rand.Text(),
-		Return:   r.URL.RequestURI(),
 		Expires:  l.now().Add(loginTimeout),
 	}
 	name := stateCookiePrefix + state
-	value, err := l.cookies.Seal(name, p)
-	if err != nil {
-		slog.Error("Failed to start login", "error", err)
-		http.Error(w, "Login is unavailable", http.StatusInternalServerError)
-		return
+	var value string
+	// A browser drops a cookie that's too big, which would leave the callback
+	// without it, so a long return URL is cut back to its path, then the root.
+	for _, ret := range []string{r.URL.RequestURI(), r.URL.EscapedPath(), "/"} {
+		p.Return = ret
+		var err error
+		value, err = l.cookies.Seal(name, p)
+		if err != nil {
+			slog.Error("Failed to start login", "error", err)
+			http.Error(w, "Login is unavailable", http.StatusInternalServerError)
+			return
+		}
+		if len(name)+len(value) <= maxCookieSize {
+			break
+		}
 	}
 	http.SetCookie(w, d.cookie(name, value, CallbackPath, p.Expires))
 	http.Redirect(
@@ -397,7 +411,7 @@ func (l *BrowserLogin) discover(ctx context.Context) (*discovery, error) {
 	if err != nil {
 		return nil, err
 	}
-	provider, err := oidc.NewProvider(ctx, l.issuer)
+	provider, err := oidc.NewProvider(providerContext(ctx), l.issuer)
 	if err != nil {
 		return nil, fmt.Errorf("discover OIDC provider: %w", err)
 	}
@@ -457,12 +471,20 @@ func checkBaseURL(base string) (string, error) {
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return "", fmt.Errorf("the base URL %q must be an absolute http or https URL", base)
 	}
+	if u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return "", fmt.Errorf("the base URL %q must not have a path, query or fragment", base)
+	}
 	return base, nil
 }
 
 func checkPath(p string) error {
 	if !strings.HasPrefix(p, "/") || p == "/" || path.Clean(p) != p {
 		return fmt.Errorf("%q must be absolute and clean, and not the root", p)
+	}
+	// Requests are matched on their escaped path as well as the decoded one,
+	// so a path that needs escaping could never match.
+	if (&url.URL{Path: p}).EscapedPath() != p {
+		return fmt.Errorf("%q must not need percent-encoding", p)
 	}
 	return nil
 }

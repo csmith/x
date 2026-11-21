@@ -16,7 +16,8 @@ import (
 )
 
 // ErrBearerUnavailable is wrapped by errors from Verify when the provider could
-// not be discovered, so the token was not checked at all.
+// not be discovered or its signing keys could not be fetched, so the token was
+// not fully checked.
 var ErrBearerUnavailable = errors.New("token verification is unavailable")
 
 type BearerConfig struct {
@@ -135,7 +136,8 @@ func (t *AccessToken) Claims(v any) error {
 }
 
 // Verify checks raw is an access token from the issuer for the audience. The
-// error wraps ErrBearerUnavailable if the provider could not be discovered.
+// error wraps ErrBearerUnavailable if the provider could not be discovered or
+// its signing keys could not be fetched.
 //
 // A token is accepted if it is a JWT of type at+jwt, signed by one of the
 // issuer's keys, issued by the issuer, unexpired, and with the configured
@@ -147,7 +149,11 @@ func (v *BearerVerifier) Verify(ctx context.Context, raw string) (*AccessToken, 
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrBearerUnavailable, err)
 	}
-	id, err := verifier.Verify(ctx, raw)
+	var fetchErr error
+	id, err := verifier.Verify(context.WithValue(ctx, keyFetchErrorKey{}, &fetchErr), raw)
+	if fetchErr != nil {
+		return nil, fmt.Errorf("%w: fetch signing keys: %w", ErrBearerUnavailable, fetchErr)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -167,12 +173,51 @@ func (v *BearerVerifier) discover(ctx context.Context) (*oidc.IDTokenVerifier, e
 	if err != nil {
 		return nil, fmt.Errorf("work out token audience: %w", err)
 	}
-	provider, err := oidc.NewProvider(ctx, v.issuer)
+	provider, err := oidc.NewProvider(providerContext(ctx), v.issuer)
 	if err != nil {
 		return nil, fmt.Errorf("discover OIDC provider: %w", err)
 	}
-	v.verifier = provider.Verifier(&oidc.Config{ClientID: audience, Now: v.now})
+	var metadata struct {
+		KeysURL    string   `json:"jwks_uri"`
+		Algorithms []string `json:"id_token_signing_alg_values_supported"`
+	}
+	if err := provider.Claims(&metadata); err != nil {
+		return nil, fmt.Errorf("read OIDC provider metadata: %w", err)
+	}
+	v.verifier = oidc.NewVerifier(
+		v.issuer,
+		reportingKeySet{oidc.NewRemoteKeySet(providerContext(context.Background()), metadata.KeysURL)},
+		&oidc.Config{ClientID: audience, Now: v.now, SupportedSigningAlgs: metadata.Algorithms},
+	)
 	return v.verifier, nil
+}
+
+// providerContext gives go-oidc's requests a timeout, since discovery holds a
+// lock that every caller waits on.
+func providerContext(ctx context.Context) context.Context {
+	return oidc.ClientContext(ctx, &http.Client{Timeout: defaultTimeout})
+}
+
+type keyFetchErrorKey struct{}
+
+// reportingKeySet records a failure to fetch the provider's signing keys in
+// the *error under keyFetchErrorKey in the context. go-oidc's verifier turns
+// every signature error into the same string, so a fetch failure can't be
+// told apart from a bad signature from the error Verify returns.
+type reportingKeySet struct {
+	keys *oidc.RemoteKeySet
+}
+
+func (k reportingKeySet) VerifySignature(ctx context.Context, jwt string) ([]byte, error) {
+	payload, err := k.keys.VerifySignature(ctx, jwt)
+	// A failed fetch is the only error the remote key set returns with a
+	// wrapped cause; a signature no key matches is a plain error.
+	if err != nil && errors.Unwrap(err) != nil {
+		if fetchErr, ok := ctx.Value(keyFetchErrorKey{}).(*error); ok {
+			*fetchErr = err
+		}
+	}
+	return payload, err
 }
 
 // checkType requires the RFC 9068 type in the JWT header, in either of the
