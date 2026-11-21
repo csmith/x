@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.0.3 - 2026-11-21
 
 - Add `file.WalkGitProjects` and `file.EnclosingGitProject` for finding git projects
 - Add `http.ServeLocalListener` for serving locally on a listener the caller opened
