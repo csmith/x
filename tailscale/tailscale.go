@@ -15,11 +15,11 @@ import (
 	"tailscale.com/tsnet"
 )
 
-// New returns a tsnet server with the given hostname, state directory and
-// auth key, logging through the default slog logger. Messages meant for the
-// user (such as login URLs) are logged at info level, and backend chatter at
-// debug level. Empty dir and authKey leave tsnet's defaults in place.
-func New(hostname, dir, authKey string) *tsnet.Server {
+// NewServer returns a tsnet server with the given hostname, state directory
+// and auth key, logging through the default slog logger. Messages meant for
+// the user (such as login URLs) are logged at info level, and backend chatter
+// at debug level. Empty dir and authKey leave tsnet's defaults in place.
+func NewServer(hostname, dir, authKey string) *tsnet.Server {
 	return &tsnet.Server{
 		Hostname: hostname,
 		Dir:      dir,

@@ -209,7 +209,7 @@ func TestServe_returnsServeErrors(t *testing.T) {
 	assert.ErrorIs(t, err, net.ErrClosed)
 }
 
-func TestNew_routesLogsToSlog(t *testing.T) {
+func TestNewServer_routesLogsToSlog(t *testing.T) {
 	var buf bytes.Buffer
 	previous := slog.Default()
 	slog.SetDefault(
@@ -230,7 +230,7 @@ func TestNew_routesLogsToSlog(t *testing.T) {
 	)
 	t.Cleanup(func() { slog.SetDefault(previous) })
 
-	s := New("node", "/state", "key")
+	s := NewServer("node", "/state", "key")
 	assert.Equal(t, "node", s.Hostname)
 	assert.Equal(t, "/state", s.Dir)
 	assert.Equal(t, "key", s.AuthKey)
@@ -246,13 +246,13 @@ func TestNew_routesLogsToSlog(t *testing.T) {
 	)
 }
 
-func TestNew_skipsDisabledLevels(t *testing.T) {
+func TestNewServer_skipsDisabledLevels(t *testing.T) {
 	var buf bytes.Buffer
 	previous := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	t.Cleanup(func() { slog.SetDefault(previous) })
 
-	New("node", "", "").Logf("backend chatter")
+	NewServer("node", "", "").Logf("backend chatter")
 
 	assert.Empty(t, buf.String())
 }
