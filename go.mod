@@ -4,6 +4,8 @@ go 1.27.4
 
 require (
 	gioui.org v0.10.3
+	github.com/coreos/go-oidc/v3 v3.21.0
+	github.com/go-jose/go-jose/v4 v4.1.9
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/oauth2 v0.38.0
 	tailscale.com v1.104.5

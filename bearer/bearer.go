@@ -1,0 +1,195 @@
+// Package bearer verifies RFC 9068 access tokens sent as
+// "Authorization: Bearer <token>".
+//
+// A token is accepted if it is a JWT of type at+jwt, signed by one of the
+// issuer's keys, issued by the issuer, unexpired, and with the configured
+// audience (normally the service's own URL) among its audiences. There are no
+// scopes: any such token is accepted. The type check is what stops an ID
+// token, which is signed by the same keys, standing in for an access token.
+//
+// The provider is discovered on first use rather than when the Verifier is
+// made, so a service still starts while its provider is down, and a failed
+// discovery is tried again on the next request. Signing keys are cached, and
+// fetched again when a token is signed with a key not yet seen, so tokens are
+// otherwise checked without contacting the provider.
+package bearer
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/coreos/go-oidc/v3/oidc"
+)
+
+// ErrUnavailable is wrapped by errors from Verify when the provider could not
+// be discovered, so the token was not checked at all.
+var ErrUnavailable = errors.New("token verification is unavailable")
+
+type Config struct {
+	// Issuer is the OpenID Connect issuer URL the tokens must come from.
+	Issuer string
+	// Audience is the audience tokens must name, normally the service's URL.
+	// Exactly one of Audience and AudienceFunc must be set.
+	Audience string
+	// AudienceFunc gives the audience on first use, for services that only
+	// know their URL once they are serving. It is called again after a
+	// failure.
+	AudienceFunc func(context.Context) (string, error)
+	// WithSubject, if set, is given the request context and the token's
+	// subject by Require, and returns the context the wrapped handler sees.
+	WithSubject func(ctx context.Context, subject string) context.Context
+	// Now is the clock tokens are checked against. It defaults to time.Now.
+	Now func() time.Time
+}
+
+// Verifier checks access tokens.
+type Verifier struct {
+	issuer      string
+	audience    func(context.Context) (string, error)
+	withSubject func(context.Context, string) context.Context
+	now         func() time.Time
+
+	mu       sync.Mutex
+	verifier *oidc.IDTokenVerifier
+}
+
+func New(cfg Config) (*Verifier, error) {
+	if cfg.Issuer == "" {
+		return nil, errors.New("the token issuer must be set")
+	}
+	if (cfg.Audience == "") == (cfg.AudienceFunc == nil) {
+		return nil, errors.New("exactly one of the token audience and audience func must be set")
+	}
+	v := &Verifier{
+		issuer:      cfg.Issuer,
+		audience:    cfg.AudienceFunc,
+		withSubject: cfg.WithSubject,
+		now:         cfg.Now,
+	}
+	if cfg.Audience != "" {
+		v.audience = func(context.Context) (string, error) { return cfg.Audience, nil }
+	}
+	if v.now == nil {
+		v.now = time.Now
+	}
+	return v, nil
+}
+
+// Require passes requests to next only with a valid token. A request without
+// one gets a 401 with a WWW-Authenticate challenge, never a redirect. If the
+// provider can't be reached it gets a 502 instead, since that isn't the
+// caller's fault and a 401 might send it off to fetch a new token.
+func (v *Verifier) Require(next http.Handler) http.Handler {
+	return http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			raw, ok := FromRequest(r)
+			if !ok {
+				w.Header().Set("WWW-Authenticate", "Bearer")
+				http.Error(w, "An access token is required", http.StatusUnauthorized)
+				return
+			}
+			token, err := v.Verify(r.Context(), raw)
+			if errors.Is(err, ErrUnavailable) {
+				slog.Error("Failed to set up access token verification", "error", err)
+				http.Error(w, "Token verification is unavailable", http.StatusBadGateway)
+				return
+			}
+			if err != nil {
+				slog.Warn("Rejected access token", "error", err, "path", r.URL.Path)
+				w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
+				http.Error(w, "Invalid access token", http.StatusUnauthorized)
+				return
+			}
+			if v.withSubject != nil {
+				r = r.WithContext(v.withSubject(r.Context(), token.Subject))
+			}
+			next.ServeHTTP(w, r)
+		},
+	)
+}
+
+// FromRequest returns the token from r's Authorization header, and whether
+// there was a non-empty one using the Bearer scheme.
+func FromRequest(r *http.Request) (string, bool) {
+	scheme, token, ok := strings.Cut(r.Header.Get("Authorization"), " ")
+	if !ok || !strings.EqualFold(scheme, "Bearer") {
+		return "", false
+	}
+	token = strings.TrimSpace(token)
+	return token, token != ""
+}
+
+// Token is a verified access token.
+type Token struct {
+	Subject string
+	Expiry  time.Time
+	idToken *oidc.IDToken
+}
+
+// Claims decodes the token's claims into v.
+func (t *Token) Claims(v any) error {
+	return t.idToken.Claims(v)
+}
+
+// Verify checks raw is an access token from the issuer for the audience. The
+// error wraps ErrUnavailable if the provider could not be discovered.
+func (v *Verifier) Verify(ctx context.Context, raw string) (*Token, error) {
+	verifier, err := v.discover(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
+	}
+	id, err := verifier.Verify(ctx, raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkType(raw); err != nil {
+		return nil, err
+	}
+	return &Token{Subject: id.Subject, Expiry: id.Expiry, idToken: id}, nil
+}
+
+func (v *Verifier) discover(ctx context.Context) (*oidc.IDTokenVerifier, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.verifier != nil {
+		return v.verifier, nil
+	}
+	audience, err := v.audience(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("work out token audience: %w", err)
+	}
+	provider, err := oidc.NewProvider(ctx, v.issuer)
+	if err != nil {
+		return nil, fmt.Errorf("discover OIDC provider: %w", err)
+	}
+	v.verifier = provider.Verifier(&oidc.Config{ClientID: audience, Now: v.now})
+	return v.verifier, nil
+}
+
+// checkType requires the RFC 9068 type in the JWT header, in either of the
+// forms the RFC allows.
+func checkType(raw string) error {
+	encoded, _, _ := strings.Cut(raw, ".")
+	header, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil {
+		return fmt.Errorf("decode token header: %w", err)
+	}
+	var h struct {
+		Type string `json:"typ"`
+	}
+	if err := json.Unmarshal(header, &h); err != nil {
+		return fmt.Errorf("parse token header: %w", err)
+	}
+	if t := strings.ToLower(h.Type); t != "at+jwt" && t != "application/at+jwt" {
+		return fmt.Errorf("token type %q is not an access token", h.Type)
+	}
+	return nil
+}
