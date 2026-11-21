@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `file.WalkGitProjects` and `file.EnclosingGitProject` for finding git projects
 - Add `http.ServeLocalListener` for serving locally on a listener the caller opened
 - `desktop.Launch` now takes its arguments as a slice, followed by options to connect the program's standard streams
 

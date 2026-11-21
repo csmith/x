@@ -1,5 +1,6 @@
 // Package file writes files atomically, so readers see either the old
-// contents or the new, never a partial write.
+// contents or the new, never a partial write, and finds git projects on
+// disk.
 package file
 
 import (
