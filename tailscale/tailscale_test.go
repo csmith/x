@@ -1,4 +1,4 @@
-package tailnet
+package tailscale
 
 import (
 	"bytes"

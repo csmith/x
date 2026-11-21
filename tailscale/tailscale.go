@@ -1,5 +1,5 @@
-// Package tailnet sets up tsnet nodes and serves HTTP handlers on them.
-package tailnet
+// Package tailscale sets up tsnet nodes and serves HTTP handlers on them.
+package tailscale
 
 import (
 	"context"
