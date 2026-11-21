@@ -1,7 +1,7 @@
-// Package ircfmt handles IRC formatting codes: bold, italic, underline,
-// strikethrough, monospace, reverse, reset, and colours in both the numbered
-// (\x03) and hex (\x04) forms.
-package ircfmt
+// Package irc handles IRC text, such as its formatting codes: bold, italic,
+// underline, strikethrough, monospace, reverse, reset, and colours in both the
+// numbered (\x03) and hex (\x04) forms.
+package irc
 
 import (
 	"strings"
@@ -34,10 +34,10 @@ type Span struct {
 	Text string
 }
 
-// Parse splits text into spans at its formatting codes, leaving the codes out.
-// Adjacent runs with the same style are merged, so text without codes is a
-// single unstyled span. Empty text gives no spans.
-func Parse(text string) []Span {
+// ParseFormatting splits text into spans at its formatting codes, leaving the
+// codes out. Adjacent runs with the same style are merged, so text without
+// codes is a single unstyled span. Empty text gives no spans.
+func ParseFormatting(text string) []Span {
 	var (
 		spans []Span
 		style Style
@@ -90,11 +90,11 @@ func Parse(text string) []Span {
 	return spans
 }
 
-// Strip removes formatting codes from text, leaving what a client would
-// display. Other control characters, including newlines, are kept. Text
+// StripFormatting removes formatting codes from text, leaving what a client
+// would display. Other control characters, including newlines, are kept. Text
 // without any codes is returned as is, so a byte slice result may share its
 // backing array with the input.
-func Strip[T string | []byte](text T) T {
+func StripFormatting[T string | []byte](text T) T {
 	i := indexCode(text)
 	if i < 0 {
 		return text
@@ -120,7 +120,7 @@ func Flatten(text string) string {
 			}
 			return r
 		},
-		Strip(text),
+		StripFormatting(text),
 	)
 	return strings.Join(strings.Fields(text), " ")
 }

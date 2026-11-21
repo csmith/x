@@ -1,18 +1,6 @@
-// Package bearer verifies RFC 9068 access tokens sent as
-// "Authorization: Bearer <token>".
-//
-// A token is accepted if it is a JWT of type at+jwt, signed by one of the
-// issuer's keys, issued by the issuer, unexpired, and with the configured
-// audience (normally the service's own URL) among its audiences. There are no
-// scopes: any such token is accepted. The type check is what stops an ID
-// token, which is signed by the same keys, standing in for an access token.
-//
-// The provider is discovered on first use rather than when the Verifier is
-// made, so a service still starts while its provider is down, and a failed
-// discovery is tried again on the next request. Signing keys are cached, and
-// fetched again when a token is signed with a key not yet seen, so tokens are
-// otherwise checked without contacting the provider.
-package bearer
+// Package http has helpers for HTTP servers: verifying bearer tokens and
+// signing cookies.
+package http
 
 import (
 	"context"
@@ -29,11 +17,11 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 )
 
-// ErrUnavailable is wrapped by errors from Verify when the provider could not
-// be discovered, so the token was not checked at all.
-var ErrUnavailable = errors.New("token verification is unavailable")
+// ErrBearerUnavailable is wrapped by errors from Verify when the provider could
+// not be discovered, so the token was not checked at all.
+var ErrBearerUnavailable = errors.New("token verification is unavailable")
 
-type Config struct {
+type BearerConfig struct {
 	// Issuer is the OpenID Connect issuer URL the tokens must come from.
 	Issuer string
 	// Audience is the audience tokens must name, normally the service's URL.
@@ -50,8 +38,15 @@ type Config struct {
 	Now func() time.Time
 }
 
-// Verifier checks access tokens.
-type Verifier struct {
+// BearerVerifier checks RFC 9068 access tokens sent as
+// "Authorization: Bearer <token>".
+//
+// The provider is discovered on first use rather than at construction, so a
+// service still starts while its provider is down, and a failed discovery is
+// tried again on the next request. Signing keys are cached, and fetched again
+// when a token is signed with a key not yet seen, so tokens are otherwise
+// checked without contacting the provider.
+type BearerVerifier struct {
 	issuer      string
 	audience    func(context.Context) (string, error)
 	withSubject func(context.Context, string) context.Context
@@ -61,14 +56,16 @@ type Verifier struct {
 	verifier *oidc.IDTokenVerifier
 }
 
-func New(cfg Config) (*Verifier, error) {
+// NewBearerVerifier checks cfg and returns a BearerVerifier for it. The
+// provider is not contacted until the first token is verified.
+func NewBearerVerifier(cfg BearerConfig) (*BearerVerifier, error) {
 	if cfg.Issuer == "" {
 		return nil, errors.New("the token issuer must be set")
 	}
 	if (cfg.Audience == "") == (cfg.AudienceFunc == nil) {
 		return nil, errors.New("exactly one of the token audience and audience func must be set")
 	}
-	v := &Verifier{
+	v := &BearerVerifier{
 		issuer:      cfg.Issuer,
 		audience:    cfg.AudienceFunc,
 		withSubject: cfg.WithSubject,
@@ -87,17 +84,17 @@ func New(cfg Config) (*Verifier, error) {
 // one gets a 401 with a WWW-Authenticate challenge, never a redirect. If the
 // provider can't be reached it gets a 502 instead, since that isn't the
 // caller's fault and a 401 might send it off to fetch a new token.
-func (v *Verifier) Require(next http.Handler) http.Handler {
+func (v *BearerVerifier) Require(next http.Handler) http.Handler {
 	return http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
-			raw, ok := FromRequest(r)
+			raw, ok := BearerToken(r)
 			if !ok {
 				w.Header().Set("WWW-Authenticate", "Bearer")
 				http.Error(w, "An access token is required", http.StatusUnauthorized)
 				return
 			}
 			token, err := v.Verify(r.Context(), raw)
-			if errors.Is(err, ErrUnavailable) {
+			if errors.Is(err, ErrBearerUnavailable) {
 				slog.Error("Failed to set up access token verification", "error", err)
 				http.Error(w, "Token verification is unavailable", http.StatusBadGateway)
 				return
@@ -116,9 +113,9 @@ func (v *Verifier) Require(next http.Handler) http.Handler {
 	)
 }
 
-// FromRequest returns the token from r's Authorization header, and whether
+// BearerToken returns the token from r's Authorization header, and whether
 // there was a non-empty one using the Bearer scheme.
-func FromRequest(r *http.Request) (string, bool) {
+func BearerToken(r *http.Request) (string, bool) {
 	scheme, token, ok := strings.Cut(r.Header.Get("Authorization"), " ")
 	if !ok || !strings.EqualFold(scheme, "Bearer") {
 		return "", false
@@ -127,24 +124,30 @@ func FromRequest(r *http.Request) (string, bool) {
 	return token, token != ""
 }
 
-// Token is a verified access token.
-type Token struct {
+// AccessToken is a verified access token.
+type AccessToken struct {
 	Subject string
 	Expiry  time.Time
 	idToken *oidc.IDToken
 }
 
 // Claims decodes the token's claims into v.
-func (t *Token) Claims(v any) error {
+func (t *AccessToken) Claims(v any) error {
 	return t.idToken.Claims(v)
 }
 
 // Verify checks raw is an access token from the issuer for the audience. The
-// error wraps ErrUnavailable if the provider could not be discovered.
-func (v *Verifier) Verify(ctx context.Context, raw string) (*Token, error) {
+// error wraps ErrBearerUnavailable if the provider could not be discovered.
+//
+// A token is accepted if it is a JWT of type at+jwt, signed by one of the
+// issuer's keys, issued by the issuer, unexpired, and with the configured
+// audience (normally the service's own URL) among its audiences. There are no
+// scopes: any such token is accepted. The type check is what stops an ID
+// token, which is signed by the same keys, standing in for an access token.
+func (v *BearerVerifier) Verify(ctx context.Context, raw string) (*AccessToken, error) {
 	verifier, err := v.discover(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
+		return nil, fmt.Errorf("%w: %w", ErrBearerUnavailable, err)
 	}
 	id, err := verifier.Verify(ctx, raw)
 	if err != nil {
@@ -153,10 +156,10 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (*Token, error) {
 	if err := checkType(raw); err != nil {
 		return nil, err
 	}
-	return &Token{Subject: id.Subject, Expiry: id.Expiry, idToken: id}, nil
+	return &AccessToken{Subject: id.Subject, Expiry: id.Expiry, idToken: id}, nil
 }
 
-func (v *Verifier) discover(ctx context.Context) (*oidc.IDTokenVerifier, error) {
+func (v *BearerVerifier) discover(ctx context.Context) (*oidc.IDTokenVerifier, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if v.verifier != nil {

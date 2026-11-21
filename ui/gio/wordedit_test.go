@@ -1,4 +1,4 @@
-package wordedit
+package gio
 
 import (
 	"image"
@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestBoundary(t *testing.T) {
+func TestWordBoundary(t *testing.T) {
 	tests := []struct {
 		name string
 		text string
@@ -42,13 +42,13 @@ func TestBoundary(t *testing.T) {
 		t.Run(
 			tt.name,
 			func(t *testing.T) {
-				assert.Equal(t, tt.want, Boundary([]rune(tt.text), tt.pos, tt.dir))
+				assert.Equal(t, tt.want, WordBoundary([]rune(tt.text), tt.pos, tt.dir))
 			},
 		)
 	}
 }
 
-func TestUpdateMovesByWord(t *testing.T) {
+func TestHandleWordEditingMovesByWord(t *testing.T) {
 	tests := []struct {
 		name       string
 		caret      int
@@ -69,7 +69,7 @@ func TestUpdateMovesByWord(t *testing.T) {
 		t.Run(
 			tt.name,
 			func(t *testing.T) {
-				h := newHarness(t)
+				h := newEditorHarness(t)
 				h.ed.SetCaret(tt.caret, tt.anchor)
 				changed := h.press(tt.key, tt.mods)
 				assert.False(t, changed)
@@ -82,7 +82,7 @@ func TestUpdateMovesByWord(t *testing.T) {
 	}
 }
 
-func TestUpdateDeletesByWord(t *testing.T) {
+func TestHandleWordEditingDeletesByWord(t *testing.T) {
 	tests := []struct {
 		name        string
 		caret       int
@@ -105,7 +105,7 @@ func TestUpdateDeletesByWord(t *testing.T) {
 		t.Run(
 			tt.name,
 			func(t *testing.T) {
-				h := newHarness(t)
+				h := newEditorHarness(t)
 				h.ed.SetCaret(tt.caret, tt.anchor)
 				changed := h.press(tt.key, key.ModCtrl)
 				assert.Equal(t, tt.wantChanged, changed)
@@ -115,8 +115,8 @@ func TestUpdateDeletesByWord(t *testing.T) {
 	}
 }
 
-func TestUpdateDeletionCanBeUndone(t *testing.T) {
-	h := newHarness(t)
+func TestHandleWordEditingDeletionCanBeUndone(t *testing.T) {
+	h := newEditorHarness(t)
 	h.ed.SetCaret(14, 14)
 	h.press(key.NameDeleteBackward, key.ModCtrl)
 	require.Equal(t, "buy milk ", h.ed.Text())
@@ -134,12 +134,12 @@ func TestUpdateDeletionCanBeUndone(t *testing.T) {
 	assert.Equal(t, "buy milk today", h.ed.Text())
 }
 
-func TestUpdateReadOnly(t *testing.T) {
+func TestHandleWordEditingReadOnly(t *testing.T) {
 	t.Run(
 		"deletion is ignored",
 		func(t *testing.T) {
 			for _, name := range []key.Name{key.NameDeleteBackward, key.NameDeleteForward} {
-				h := newHarness(t)
+				h := newEditorHarness(t)
 				h.ed.ReadOnly = true
 				h.ed.SetCaret(8, 8)
 				assert.False(t, h.press(name, key.ModCtrl))
@@ -150,7 +150,7 @@ func TestUpdateReadOnly(t *testing.T) {
 	t.Run(
 		"motion still works",
 		func(t *testing.T) {
-			h := newHarness(t)
+			h := newEditorHarness(t)
 			h.ed.ReadOnly = true
 			h.ed.SetCaret(8, 8)
 			h.press(key.NameLeftArrow, key.ModCtrl|key.ModShift)
@@ -159,34 +159,34 @@ func TestUpdateReadOnly(t *testing.T) {
 	)
 }
 
-func TestUpdateIgnoresUnfocusedEditor(t *testing.T) {
-	h := newHarness(t)
+func TestHandleWordEditingIgnoresUnfocusedEditor(t *testing.T) {
+	h := newEditorHarness(t)
 	other := new(widget.Editor)
 	h.ed.SetCaret(14, 14)
 	h.router.Queue(key.Event{Name: key.NameDeleteBackward, Modifiers: key.ModCtrl, State: key.Press})
 	h.frame(
 		func(gtx layout.Context) {
-			assert.False(t, Update(gtx, other))
-			assert.True(t, Update(gtx, h.ed))
+			assert.False(t, HandleWordEditing(gtx, other))
+			assert.True(t, HandleWordEditing(gtx, h.ed))
 		},
 	)
 	assert.Equal(t, "buy milk ", h.ed.Text())
 }
 
-// harness drives a focused editor holding "buy milk today" through Gio's input
-// router, so tests send it real key events.
-type harness struct {
+// editorHarness drives a focused editor holding "buy milk today" through Gio's
+// input router, so tests send it real key events.
+type editorHarness struct {
 	router *input.Router
 	ed     *widget.Editor
 }
 
-func newHarness(t *testing.T) *harness {
-	h := &harness{router: new(input.Router), ed: new(widget.Editor)}
+func newEditorHarness(t *testing.T) *editorHarness {
+	h := &editorHarness{router: new(input.Router), ed: new(widget.Editor)}
 	h.ed.SetText("buy milk today")
 	h.frame(
 		func(gtx layout.Context) {
 			gtx.Execute(key.FocusCmd{Tag: h.ed})
-			Update(gtx, h.ed)
+			HandleWordEditing(gtx, h.ed)
 		},
 	)
 	// Focus takes effect in the next frame, which also registers the filters
@@ -194,24 +194,24 @@ func newHarness(t *testing.T) *harness {
 	h.frame(
 		func(gtx layout.Context) {
 			require.True(t, gtx.Focused(h.ed))
-			Update(gtx, h.ed)
+			HandleWordEditing(gtx, h.ed)
 		},
 	)
 	return h
 }
 
-func (h *harness) press(name key.Name, mods key.Modifiers) bool {
+func (h *editorHarness) press(name key.Name, mods key.Modifiers) bool {
 	h.router.Queue(key.Event{Name: name, Modifiers: mods, State: key.Press})
 	var changed bool
 	h.frame(
 		func(gtx layout.Context) {
-			changed = Update(gtx, h.ed)
+			changed = HandleWordEditing(gtx, h.ed)
 		},
 	)
 	return changed
 }
 
-func (h *harness) frame(f func(gtx layout.Context)) {
+func (h *editorHarness) frame(f func(gtx layout.Context)) {
 	ops := new(op.Ops)
 	gtx := layout.Context{
 		Ops:         ops,
@@ -219,7 +219,8 @@ func (h *harness) frame(f func(gtx layout.Context)) {
 		Constraints: layout.Exact(image.Pt(400, 100)),
 	}
 	f(gtx)
-	// The editor's Layout would declare it focusable; the tests don't lay it out.
+	// The editor's Layout would declare it focusable; the tests don't lay it
+	// out.
 	for {
 		if _, ok := gtx.Event(key.FocusFilter{Target: h.ed}); !ok {
 			break

@@ -1,4 +1,4 @@
-package bearer
+package http
 
 import (
 	"context"
@@ -21,10 +21,10 @@ var testNow = time.Date(2026, 11, 8, 14, 0, 0, 0, time.UTC)
 
 type subjectKey struct{}
 
-func newVerifier(t *testing.T, p *oidctest.Provider) *Verifier {
+func newVerifier(t *testing.T, p *oidctest.Provider) *BearerVerifier {
 	t.Helper()
-	v, err := New(
-		Config{
+	v, err := NewBearerVerifier(
+		BearerConfig{
 			Issuer:   p.Issuer(),
 			Audience: testAudience,
 			WithSubject: func(ctx context.Context, subject string) context.Context {
@@ -37,7 +37,7 @@ func newVerifier(t *testing.T, p *oidctest.Provider) *Verifier {
 	return v
 }
 
-func serve(t *testing.T, v *Verifier, header string) *httptest.ResponseRecorder {
+func serve(t *testing.T, v *BearerVerifier, header string) *httptest.ResponseRecorder {
 	t.Helper()
 	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/things", nil)
 	if header != "" {
@@ -55,9 +55,9 @@ func serve(t *testing.T, v *Verifier, header string) *httptest.ResponseRecorder 
 	return rec
 }
 
-func TestNew_requiresConfig(t *testing.T) {
+func TestNewBearerVerifier_requiresConfig(t *testing.T) {
 	audienceFunc := func(context.Context) (string, error) { return testAudience, nil }
-	tests := map[string]Config{
+	tests := map[string]BearerConfig{
 		"no issuer":    {Audience: testAudience},
 		"no audience":  {Issuer: "https://id.example"},
 		"two audience": {Issuer: "https://id.example", Audience: testAudience, AudienceFunc: audienceFunc},
@@ -66,16 +66,16 @@ func TestNew_requiresConfig(t *testing.T) {
 		t.Run(
 			name,
 			func(t *testing.T) {
-				_, err := New(cfg)
+				_, err := NewBearerVerifier(cfg)
 				assert.Error(t, err)
 			},
 		)
 	}
-	_, err := New(Config{Issuer: "https://id.example", AudienceFunc: audienceFunc})
+	_, err := NewBearerVerifier(BearerConfig{Issuer: "https://id.example", AudienceFunc: audienceFunc})
 	assert.NoError(t, err)
 }
 
-func TestRequire_acceptsAValidToken(t *testing.T) {
+func TestBearerVerifier_Require_acceptsAValidToken(t *testing.T) {
 	p := oidctest.New(t, testNow)
 
 	rec := serve(t, newVerifier(t, p), "Bearer "+p.AccessToken(testAudience, testNow, nil))
@@ -84,13 +84,13 @@ func TestRequire_acceptsAValidToken(t *testing.T) {
 	assert.Equal(t, "hello service-caller", rec.Body.String())
 }
 
-func TestRequire_acceptsTheSchemeInAnyCase(t *testing.T) {
+func TestBearerVerifier_Require_acceptsTheSchemeInAnyCase(t *testing.T) {
 	p := oidctest.New(t, testNow)
 
 	assert.Equal(t, http.StatusOK, serve(t, newVerifier(t, p), "bearer "+p.AccessToken(testAudience, testNow, nil)).Code)
 }
 
-func TestRequire_challengesMissingTokens(t *testing.T) {
+func TestBearerVerifier_Require_challengesMissingTokens(t *testing.T) {
 	v := newVerifier(t, oidctest.New(t, testNow))
 
 	for _, header := range []string{"", "Bearer ", "Basic dXNlcjpwYXNz", "Bearer"} {
@@ -100,7 +100,7 @@ func TestRequire_challengesMissingTokens(t *testing.T) {
 	}
 }
 
-func TestRequire_rejectsBadTokens(t *testing.T) {
+func TestBearerVerifier_Require_rejectsBadTokens(t *testing.T) {
 	other, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 
@@ -165,7 +165,7 @@ func TestRequire_rejectsBadTokens(t *testing.T) {
 	}
 }
 
-func TestVerify_acceptsTheApplicationTypeForm(t *testing.T) {
+func TestBearerVerifier_Verify_acceptsTheApplicationTypeForm(t *testing.T) {
 	p := oidctest.New(t, testNow)
 	v := newVerifier(t, p)
 	raw := p.Sign(
@@ -186,7 +186,7 @@ func TestVerify_acceptsTheApplicationTypeForm(t *testing.T) {
 	assert.Equal(t, testNow.Add(time.Hour), token.Expiry.UTC())
 }
 
-func TestVerify_exposesClaims(t *testing.T) {
+func TestBearerVerifier_Verify_exposesClaims(t *testing.T) {
 	p := oidctest.New(t, testNow)
 
 	token, err := newVerifier(t, p).Verify(
@@ -202,7 +202,7 @@ func TestVerify_exposesClaims(t *testing.T) {
 	assert.Equal(t, "x", claims.Role)
 }
 
-func TestRequire_providerDownIsRetried(t *testing.T) {
+func TestBearerVerifier_Require_providerDownIsRetried(t *testing.T) {
 	p := oidctest.New(t, testNow)
 	v := newVerifier(t, p)
 	header := "Bearer " + p.AccessToken(testAudience, testNow, nil)
@@ -214,11 +214,11 @@ func TestRequire_providerDownIsRetried(t *testing.T) {
 	assert.Equal(t, http.StatusOK, serve(t, v, header).Code)
 }
 
-func TestVerify_audienceFuncFailureIsUnavailable(t *testing.T) {
+func TestBearerVerifier_Verify_audienceFuncFailureIsUnavailable(t *testing.T) {
 	p := oidctest.New(t, testNow)
 	calls := 0
-	v, err := New(
-		Config{
+	v, err := NewBearerVerifier(
+		BearerConfig{
 			Issuer: p.Issuer(),
 			AudienceFunc: func(context.Context) (string, error) {
 				calls++
@@ -234,7 +234,7 @@ func TestVerify_audienceFuncFailureIsUnavailable(t *testing.T) {
 	raw := p.AccessToken(testAudience, testNow, nil)
 
 	_, err = v.Verify(t.Context(), raw)
-	require.ErrorIs(t, err, ErrUnavailable)
+	require.ErrorIs(t, err, ErrBearerUnavailable)
 
 	_, err = v.Verify(t.Context(), raw)
 	assert.NoError(t, err)

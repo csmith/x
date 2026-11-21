@@ -1,22 +1,4 @@
-// Package login puts a service's web pages behind an OpenID Connect login:
-// the authorization-code flow with PKCE.
-//
-// There is no session store. A session is a cookie signed with the session
-// key, so it survives restarts and deploys as long as the key stays the same,
-// and it lasts as long as the configured Expiry says, whatever the ID token's
-// own expiry. While a login is in progress, what the callback needs is kept
-// in a cookie named after the login's state, so several tabs sent to log in
-// at once (a browser restoring its tabs after the session ran out, say) each
-// find their own.
-//
-// Optionally, some or all paths also take RFC 9068 access tokens sent as
-// "Authorization: Bearer <token>", with the service's URL as their audience,
-// for other services calling an API; see the bearer package.
-//
-// Requests let through with a session are also protected against cross-origin
-// requests by [http.CrossOriginProtection], so another site can't make
-// changes using the browser's session cookie.
-package login
+package oidc
 
 import (
 	"context"
@@ -33,15 +15,14 @@ import (
 	"time"
 	_ "time/tzdata" // the default session expiry is in Europe/London, and containers often lack zoneinfo
 
-	"chameth.com/x/bearer"
-	"chameth.com/x/signedcookie"
+	xhttp "chameth.com/x/http"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 )
 
 const (
-	// CallbackPath is where the provider sends the browser back to. Register the
-	// service's URL with this path appended as the client's callback URL.
+	// CallbackPath is where the provider sends the browser back to. Register
+	// the service's URL with this path appended as the client's callback URL.
 	CallbackPath = "/auth/callback"
 
 	sessionCookie     = "auth_session"
@@ -49,13 +30,13 @@ const (
 	loginTimeout      = 10 * time.Minute
 )
 
-type Config struct {
+type BrowserLoginConfig struct {
 	// Issuer is the OpenID Connect issuer URL.
 	Issuer       string
 	ClientID     string
 	ClientSecret string
 	// SessionKey signs the cookies, and must be at least
-	// signedcookie.MinKeyLength bytes. Changing it logs everyone out.
+	// xhttp.MinCookieKeyLength bytes. Changing it logs everyone out.
 	SessionKey string
 
 	// BaseURL is the service's own URL: the base of the callback URL, and the
@@ -69,7 +50,7 @@ type Config struct {
 	// Expiry gives when a session started at the given time ends. It defaults
 	// to the next 05:00 Europe/London, so a session runs out overnight rather
 	// than while a form is half filled in.
-	Expiry Expiry
+	Expiry SessionExpiry
 
 	// ExemptPrefixes are paths that need neither a login nor a token, along
 	// with everything under them: "/static" opens "/static" and
@@ -94,21 +75,38 @@ type Config struct {
 	WithSubject func(ctx context.Context, subject string) context.Context
 }
 
-// Login requires a session, or a token where configured, on everything but
-// the exempt paths.
-type Login struct {
+// BrowserLogin puts a service's web pages behind an OpenID Connect login, using
+// the authorization-code flow with PKCE. It requires a session, or a token
+// where configured, on everything but the exempt paths.
+//
+// There is no session store. A session is a cookie signed with the session
+// key, so it survives restarts and deploys as long as the key stays the same,
+// and it lasts as long as the configured Expiry says, whatever the ID token's
+// own expiry. While a login is in progress, what the callback needs is kept
+// in a cookie named after the login's state, so several tabs sent to log in
+// at once (a browser restoring its tabs after the session ran out, say) each
+// find their own.
+//
+// Optionally, some or all paths also take RFC 9068 access tokens sent as
+// "Authorization: Bearer <token>", with the service's URL as their audience,
+// for other services calling an API; see [xhttp.BearerVerifier].
+//
+// Requests let through with a session are also protected against cross-origin
+// requests by [http.CrossOriginProtection], so another site can't make
+// changes using the browser's session cookie.
+type BrowserLogin struct {
 	issuer         string
 	clientID       string
 	clientSecret   string
-	cookies        *signedcookie.Signer
+	cookies        *xhttp.CookieSigner
 	baseURL        func(context.Context) (string, error)
-	expiry         Expiry
+	expiry         SessionExpiry
 	exemptPrefixes []string
 	exemptPaths    []string
 	bearerPrefix   string
 	bearerAnywhere bool
 	withSubject    func(context.Context, string) context.Context
-	bearer         *bearer.Verifier
+	bearer         *xhttp.BearerVerifier
 	crossOrigin    *http.CrossOriginProtection
 	now            func() time.Time
 
@@ -124,20 +122,20 @@ type discovery struct {
 	secure bool
 }
 
-// New checks cfg and returns a Login for it. The provider is not contacted
-// until the first request that needs it, so a service still starts while its
-// provider is down, and a failed discovery is tried again on the next
-// request.
+// NewBrowserLogin checks cfg and returns a BrowserLogin for it. The provider is
+// not contacted until the first request that needs it, so a service still
+// starts while its provider is down, and a failed discovery is tried again on
+// the next request.
 //
 // Exempt paths and the bearer prefix must be absolute and already clean, as
-// path.Clean leaves them, and not the root. A request for any other spelling
-// of a path, such as "/static/../admin" or "/x/%2E%2E%2Fmetrics", is never
-// exempt and never counted as under the bearer prefix.
-func New(cfg Config) (*Login, error) {
+// path.Clean leaves them, and not the root. A request for any other spelling of
+// a path, such as "/static/../admin" or "/x/%2E%2E%2Fmetrics", is never exempt
+// and never counted as under the bearer prefix.
+func NewBrowserLogin(cfg BrowserLoginConfig) (*BrowserLogin, error) {
 	if cfg.Issuer == "" || cfg.ClientID == "" || cfg.ClientSecret == "" {
 		return nil, errors.New("the OIDC issuer, client ID and client secret must all be set")
 	}
-	cookies, err := signedcookie.New([]byte(cfg.SessionKey))
+	cookies, err := xhttp.NewCookieSigner([]byte(cfg.SessionKey))
 	if err != nil {
 		return nil, fmt.Errorf("session key: %w", err)
 	}
@@ -156,7 +154,7 @@ func New(cfg Config) (*Login, error) {
 		}
 	}
 
-	l := &Login{
+	l := &BrowserLogin{
 		issuer:         cfg.Issuer,
 		clientID:       cfg.ClientID,
 		clientSecret:   cfg.ClientSecret,
@@ -176,11 +174,11 @@ func New(cfg Config) (*Login, error) {
 		if err != nil {
 			return nil, fmt.Errorf("load session expiry time zone: %w", err)
 		}
-		l.expiry = DailyAt(5, london)
+		l.expiry = ExpireDailyAt(5, london)
 	}
 	if cfg.BearerPrefix != "" || cfg.BearerAnywhere {
-		l.bearer, err = bearer.New(
-			bearer.Config{
+		l.bearer, err = xhttp.NewBearerVerifier(
+			xhttp.BearerConfig{
 				Issuer:       cfg.Issuer,
 				AudienceFunc: baseURL,
 				WithSubject:  cfg.WithSubject,
@@ -202,7 +200,7 @@ func New(cfg Config) (*Login, error) {
 // such as a POST or a script's fetch, gets a 401 instead: a redirect would
 // bring a POST back as a GET without its body, and a script can't follow one
 // to the provider.
-func (l *Login) Wrap(next http.Handler) http.Handler {
+func (l *BrowserLogin) Wrap(next http.Handler) http.Handler {
 	sessionNext := l.crossOrigin.Handler(next)
 	return http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
@@ -224,7 +222,7 @@ func (l *Login) Wrap(next http.Handler) http.Handler {
 	)
 }
 
-func (l *Login) requireSession(next http.Handler, w http.ResponseWriter, r *http.Request) {
+func (l *BrowserLogin) requireSession(next http.Handler, w http.ResponseWriter, r *http.Request) {
 	var s session
 	if l.cookies.Read(r, sessionCookie, &s) && l.now().Before(s.Expires) {
 		if l.withSubject != nil {
@@ -258,11 +256,11 @@ func hasBearer(r *http.Request) bool {
 
 // The decoded and escaped paths must both match, since a mux may route on
 // either: "/x/%2E%2E%2Fmetrics" must not pass as "/metrics".
-func (l *Login) isExempt(u *url.URL) bool {
+func (l *BrowserLogin) isExempt(u *url.URL) bool {
 	return l.exemptPath(u.Path) && l.exemptPath(u.EscapedPath())
 }
 
-func (l *Login) exemptPath(p string) bool {
+func (l *BrowserLogin) exemptPath(p string) bool {
 	if !canonical(p) {
 		return false
 	}
@@ -296,7 +294,7 @@ type pending struct {
 	Expires  time.Time `json:"exp"`
 }
 
-func (l *Login) redirectToProvider(w http.ResponseWriter, r *http.Request) {
+func (l *BrowserLogin) redirectToProvider(w http.ResponseWriter, r *http.Request) {
 	d, err := l.discover(r.Context())
 	if err != nil {
 		slog.Error("Failed to set up login", "error", err)
@@ -327,7 +325,7 @@ func (l *Login) redirectToProvider(w http.ResponseWriter, r *http.Request) {
 	)
 }
 
-func (l *Login) handleCallback(w http.ResponseWriter, r *http.Request) {
+func (l *BrowserLogin) handleCallback(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	name := stateCookiePrefix + query.Get("state")
 	var p pending
@@ -388,7 +386,7 @@ func (l *Login) handleCallback(w http.ResponseWriter, r *http.Request) {
 
 // discover finds the provider and the base URL on first use and keeps the
 // result. A failure is not kept, so the next request tries again.
-func (l *Login) discover(ctx context.Context) (*discovery, error) {
+func (l *BrowserLogin) discover(ctx context.Context) (*discovery, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.discovery != nil {
@@ -425,8 +423,8 @@ func (d *discovery) cookie(name, value, path string, expires time.Time) *http.Co
 		Expires:  expires,
 		HttpOnly: true,
 		Secure:   d.secure,
-		// Lax rather than Strict: the provider's redirect back to the callback is
-		// a cross-site navigation, and it has to carry the state cookie.
+		// Lax rather than Strict: the provider's redirect back to the callback
+		// is a cross-site navigation, and it has to carry the state cookie.
 		SameSite: http.SameSiteLaxMode,
 	}
 }
@@ -478,14 +476,14 @@ func localPath(p string) string {
 	return p
 }
 
-// Expiry gives the time a session started at loggedIn ends, which must be
-// after loggedIn.
-type Expiry func(loggedIn time.Time) time.Time
+// SessionExpiry gives the time a session started at loggedIn ends, which must
+// be after loggedIn.
+type SessionExpiry func(loggedIn time.Time) time.Time
 
-// DailyAt ends sessions at the first hour:00 in loc strictly after login.
+// ExpireDailyAt ends sessions at the first hour:00 in loc strictly after login.
 // It is still hour:00 on the days the clocks change, unless that hour is
 // skipped or repeated.
-func DailyAt(hour int, loc *time.Location) Expiry {
+func ExpireDailyAt(hour int, loc *time.Location) SessionExpiry {
 	return func(t time.Time) time.Time {
 		local := t.In(loc)
 		reset := time.Date(local.Year(), local.Month(), local.Day(), hour, 0, 0, 0, loc)
@@ -496,8 +494,8 @@ func DailyAt(hour int, loc *time.Location) Expiry {
 	}
 }
 
-// After ends sessions a fixed duration after login.
-func After(d time.Duration) Expiry {
+// ExpireAfter ends sessions a fixed duration after login.
+func ExpireAfter(d time.Duration) SessionExpiry {
 	return func(t time.Time) time.Time {
 		return t.Add(d)
 	}

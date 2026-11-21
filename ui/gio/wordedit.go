@@ -1,6 +1,6 @@
-// Package wordedit adds Ctrl-modified word motion and deletion to Gio's
-// widget.Editor, which on Linux takes those keys as shortcuts and drops them.
-package wordedit
+// Package gio fills gaps in Gio's widgets: Ctrl-modified word motion and
+// deletion for editors, and mouse wheel scrolling by whole notches.
+package gio
 
 import (
 	"unicode"
@@ -10,17 +10,17 @@ import (
 	"gioui.org/widget"
 )
 
-// Update handles word editing keys for ed: Ctrl+Left and Ctrl+Right move the
-// caret by a word, extending the selection with Shift, and Ctrl+Backspace and
-// Ctrl+Delete delete a word, or the selection if there is one. Deletions are
-// ignored while ed is read-only, but motion still works. Edits go through the
-// editor's caret and delete calls, so they can be undone.
+// HandleWordEditing handles word editing keys for ed: Ctrl+Left and Ctrl+Right
+// move the caret by a word, extending the selection with Shift, and
+// Ctrl+Backspace and Ctrl+Delete delete a word, or the selection if there is
+// one. Deletions are ignored while ed is read-only, but motion still works.
+// Edits go through the editor's caret and delete calls, so they can be undone.
 //
-// Update must be called each frame before anything else reads ed's events,
-// including ed's own Update and Layout, since Gio gives each key event to the
-// first filter that matches it. It reports whether it changed ed's text, as
-// the editor won't send a ChangeEvent for these edits.
-func Update(gtx layout.Context, ed *widget.Editor) (changed bool) {
+// HandleWordEditing must be called each frame before anything else reads ed's
+// events, including ed's own Update and Layout, since Gio gives each key event
+// to the first filter that matches it. It reports whether it changed ed's text,
+// as the editor won't send a ChangeEvent for these edits.
+func HandleWordEditing(gtx layout.Context, ed *widget.Editor) (changed bool) {
 	for {
 		ev, ok := gtx.Event(
 			key.Filter{Focus: ed, Name: key.NameLeftArrow, Required: key.ModCtrl, Optional: key.ModShift},
@@ -48,10 +48,10 @@ func Update(gtx layout.Context, ed *widget.Editor) (changed bool) {
 	}
 }
 
-// Boundary returns the rune offset reached by moving a word from pos in
+// WordBoundary returns the rune offset reached by moving a word from pos in
 // direction dir (-1 back, 1 forward) through text: past any whitespace, then
 // past the run of non-whitespace beyond it.
-func Boundary(text []rune, pos, dir int) int {
+func WordBoundary(text []rune, pos, dir int) int {
 	skip := func(space bool) {
 		for {
 			// The rune a step in dir crosses: the one at pos going forward,
@@ -73,7 +73,7 @@ func Boundary(text []rune, pos, dir int) int {
 
 func moveWord(ed *widget.Editor, dir int, extend bool) {
 	caret, anchor := ed.Selection()
-	pos := Boundary([]rune(ed.Text()), caret, dir)
+	pos := WordBoundary([]rune(ed.Text()), caret, dir)
 	if extend {
 		ed.SetCaret(pos, anchor)
 	} else {
@@ -89,7 +89,7 @@ func deleteWord(ed *widget.Editor, dir int) bool {
 		return ed.Delete(1) != 0
 	}
 	caret, _ := ed.Selection()
-	pos := Boundary([]rune(ed.Text()), caret, dir)
+	pos := WordBoundary([]rune(ed.Text()), caret, dir)
 	if pos == caret {
 		// Delete on an empty selection removes a character, so a caret already
 		// at the text's edge must not reach it.

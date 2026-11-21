@@ -1,4 +1,4 @@
-package wheel
+package gio
 
 import (
 	"image"
@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestAccumulatorAdd(t *testing.T) {
+func TestWheelAccumulator_Add(t *testing.T) {
 	tests := []struct {
 		name   string
 		deltas []float32
@@ -23,9 +23,9 @@ func TestAccumulatorAdd(t *testing.T) {
 		{"X11 notch up", []float32{-10}, []int{-1}},
 		{"X11 notches one at a time", []float32{10, 10, -10}, []int{1, 1, -1}},
 		{"X11 notches in one event", []float32{20}, []int{2}},
-		{"Wayland notch is capped", []float32{150}, []int{MaxNotches}},
-		{"Wayland notch up is capped", []float32{-150}, []int{-MaxNotches}},
-		{"capping drops the remainder", []float32{155, 5}, []int{MaxNotches, 0}},
+		{"Wayland notch is capped", []float32{150}, []int{MaxWheelNotches}},
+		{"Wayland notch up is capped", []float32{-150}, []int{-MaxWheelNotches}},
+		{"capping drops the remainder", []float32{155, 5}, []int{MaxWheelNotches, 0}},
 		{"trackpad fractions add up", []float32{2.5, 2.5, 2.5, 2.5}, []int{0, 0, 0, 1}},
 		{"trackpad remainder carries over", []float32{7, 7, 7}, []int{0, 1, 1}},
 		{"trackpad upwards", []float32{-6, -6}, []int{0, -1}},
@@ -36,7 +36,7 @@ func TestAccumulatorAdd(t *testing.T) {
 		t.Run(
 			tt.name,
 			func(t *testing.T) {
-				var acc Accumulator
+				var acc WheelAccumulator
 				got := make([]int, len(tt.deltas))
 				for i, d := range tt.deltas {
 					got[i] = acc.Add(d)
@@ -47,7 +47,7 @@ func TestAccumulatorAdd(t *testing.T) {
 	}
 }
 
-func TestListScrollsByItems(t *testing.T) {
+func TestWheelList_ScrollsByItems(t *testing.T) {
 	tests := []struct {
 		name          string
 		axis          layout.Axis
@@ -55,11 +55,11 @@ func TestListScrollsByItems(t *testing.T) {
 		itemsPerNotch float32
 		want          int
 	}{
-		{"one notch", layout.Vertical, f32.Pt(0, Notch), 3, 3},
-		{"two notches", layout.Vertical, f32.Pt(0, 2*Notch), 3, 6},
-		{"part of a notch", layout.Vertical, f32.Pt(0, Notch/2), 3, 0},
-		{"horizontal list", layout.Horizontal, f32.Pt(Notch, 0), 2, 2},
-		{"horizontal wheel on vertical list", layout.Vertical, f32.Pt(Notch, 0), 3, 0},
+		{"one notch", layout.Vertical, f32.Pt(0, WheelNotch), 3, 3},
+		{"two notches", layout.Vertical, f32.Pt(0, 2*WheelNotch), 3, 6},
+		{"part of a notch", layout.Vertical, f32.Pt(0, WheelNotch/2), 3, 0},
+		{"horizontal list", layout.Horizontal, f32.Pt(WheelNotch, 0), 2, 2},
+		{"horizontal wheel on vertical list", layout.Vertical, f32.Pt(WheelNotch, 0), 3, 0},
 	}
 	for _, tt := range tests {
 		t.Run(
@@ -79,7 +79,7 @@ func TestListScrollsByItems(t *testing.T) {
 	}
 }
 
-func TestListPassesClicksThrough(t *testing.T) {
+func TestWheelList_PassesClicksThrough(t *testing.T) {
 	h := newListHarness(layout.Vertical, 1)
 	h.frame()
 	h.router.Queue(
@@ -94,7 +94,7 @@ func TestListPassesClicksThrough(t *testing.T) {
 // view at a time, so tests can send it real pointer events.
 type listHarness struct {
 	router        *input.Router
-	wheel         List
+	wheel         WheelList
 	list          widget.List
 	items         [20]widget.Clickable
 	itemsPerNotch float32

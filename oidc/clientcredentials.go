@@ -1,12 +1,7 @@
-// Package clientcreds gets OAuth 2.0 access tokens with the client credentials
-// grant from an OpenID Connect provider, for APIs identified by an RFC 8707
-// resource parameter.
-//
-// The provider's token endpoint is discovered when the first token is needed,
-// not at construction, so a service whose provider is down still starts; a
-// failed discovery is tried again on the next request. Each resource's token is
-// cached until shortly before it expires, and then fetched again.
-package clientcreds
+// Package oidc authenticates with an OpenID Connect provider: services getting
+// access tokens for other services' APIs, and people logging in to a service's
+// web pages.
+package oidc
 
 import (
 	"context"
@@ -26,9 +21,15 @@ import (
 
 const defaultTimeout = 30 * time.Second
 
-// Client gets tokens from one provider as one OAuth client, for any number of
-// resources. It is safe for concurrent use.
-type Client struct {
+// ClientCredentials gets OAuth 2.0 access tokens with the client credentials
+// grant, from one provider as one OAuth client, for any number of APIs
+// identified by an RFC 8707 resource parameter. It is safe for concurrent use.
+//
+// The provider's token endpoint is discovered when the first token is needed,
+// not at construction, so a service whose provider is down still starts; a
+// failed discovery is tried again on the next request. Each resource's token is
+// cached until shortly before it expires, and then fetched again.
+type ClientCredentials struct {
 	issuer        string
 	clientID      string
 	clientSecret  string
@@ -43,14 +44,14 @@ type Client struct {
 	tokens   map[string]*resourceToken
 }
 
-// Option configures a Client.
-type Option func(*Client)
+// ClientCredentialsOption configures a ClientCredentials.
+type ClientCredentialsOption func(*ClientCredentials)
 
 // WithHTTPClient sets the client used for discovery and token requests. It
 // should have a timeout, as a token request blocks every other request for the
 // same resource. The default client times out after 30 seconds.
-func WithHTTPClient(client *http.Client) Option {
-	return func(c *Client) {
+func WithHTTPClient(client *http.Client) ClientCredentialsOption {
+	return func(c *ClientCredentials) {
 		c.httpClient = client
 	}
 }
@@ -59,8 +60,8 @@ func WithHTTPClient(client *http.Client) Option {
 // rather than detecting which style the provider accepts. Detection answers a
 // refusal by retrying with the credentials in the body, and reports that
 // attempt's error instead of the original one.
-func WithHeaderAuth() Option {
-	return func(c *Client) {
+func WithHeaderAuth() ClientCredentialsOption {
+	return func(c *ClientCredentials) {
 		c.authStyle = oauth2.AuthStyleInHeader
 	}
 }
@@ -68,15 +69,18 @@ func WithHeaderAuth() Option {
 // WithTrimmedResources removes trailing slashes from resources before sending
 // them, for providers such as Pocket ID that strip them from the identifiers
 // of registered APIs.
-func WithTrimmedResources() Option {
-	return func(c *Client) {
+func WithTrimmedResources() ClientCredentialsOption {
+	return func(c *ClientCredentials) {
 		c.trimResources = true
 	}
 }
 
-// New returns a Client for the provider at issuer. It makes no requests, so
-// only fails if the configuration is unusable.
-func New(issuer, clientID, clientSecret string, opts ...Option) (*Client, error) {
+// NewClientCredentials returns a ClientCredentials for the provider at issuer.
+// It makes no requests, so only fails if the configuration is unusable.
+func NewClientCredentials(
+	issuer, clientID, clientSecret string,
+	opts ...ClientCredentialsOption,
+) (*ClientCredentials, error) {
 	u, err := url.Parse(issuer)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return nil, fmt.Errorf("issuer %q must be an absolute http(s) URL", issuer)
@@ -85,7 +89,7 @@ func New(issuer, clientID, clientSecret string, opts ...Option) (*Client, error)
 		return nil, errors.New("client ID and secret are required")
 	}
 
-	c := &Client{
+	c := &ClientCredentials{
 		issuer:       issuer,
 		clientID:     clientID,
 		clientSecret: clientSecret,
@@ -100,13 +104,13 @@ func New(issuer, clientID, clientSecret string, opts ...Option) (*Client, error)
 
 // Token returns a current access token for resource, fetching a new one if the
 // cached one has expired. An empty resource sends no resource parameter.
-func (c *Client) Token(ctx context.Context, resource string) (*oauth2.Token, error) {
+func (c *ClientCredentials) Token(ctx context.Context, resource string) (*oauth2.Token, error) {
 	return c.resourceToken(resource).get(ctx)
 }
 
 // TokenFunc returns a function giving the current access token for resource,
 // suitable for Temporal's client.NewAPIKeyDynamicCredentials.
-func (c *Client) TokenFunc(resource string) func(ctx context.Context) (string, error) {
+func (c *ClientCredentials) TokenFunc(resource string) func(ctx context.Context) (string, error) {
 	rt := c.resourceToken(resource)
 	return func(ctx context.Context) (string, error) {
 		token, err := rt.get(ctx)
@@ -119,7 +123,7 @@ func (c *Client) TokenFunc(resource string) func(ctx context.Context) (string, e
 
 // TokenSource returns a token source for resource. Its requests run without a
 // context, so are bounded only by the HTTP client's timeout.
-func (c *Client) TokenSource(resource string) oauth2.TokenSource {
+func (c *ClientCredentials) TokenSource(resource string) oauth2.TokenSource {
 	return &tokenSource{rt: c.resourceToken(resource)}
 }
 
@@ -134,7 +138,7 @@ func (t *tokenSource) Token() (*oauth2.Token, error) {
 // Transport returns a round tripper that sends each request through base with
 // a bearer token for resource. A nil base means http.DefaultTransport. Token
 // requests run under the outgoing request's context.
-func (c *Client) Transport(resource string, base http.RoundTripper) http.RoundTripper {
+func (c *ClientCredentials) Transport(resource string, base http.RoundTripper) http.RoundTripper {
 	if base == nil {
 		base = http.DefaultTransport
 	}
@@ -160,7 +164,7 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return t.base.RoundTrip(req)
 }
 
-func (c *Client) resourceToken(resource string) *resourceToken {
+func (c *ClientCredentials) resourceToken(resource string) *resourceToken {
 	if c.trimResources {
 		resource = strings.TrimRight(resource, "/")
 	}
@@ -176,7 +180,7 @@ func (c *Client) resourceToken(resource string) *resourceToken {
 }
 
 type resourceToken struct {
-	client   *Client
+	client   *ClientCredentials
 	resource string
 
 	mu      sync.Mutex
@@ -211,7 +215,7 @@ func (r *resourceToken) get(ctx context.Context) (*oauth2.Token, error) {
 	return token, nil
 }
 
-func (c *Client) tokenEndpoint(ctx context.Context) (string, error) {
+func (c *ClientCredentials) tokenEndpoint(ctx context.Context) (string, error) {
 	c.discoveryMu.Lock()
 	defer c.discoveryMu.Unlock()
 	if c.tokenURL != "" {
@@ -226,7 +230,7 @@ func (c *Client) tokenEndpoint(ctx context.Context) (string, error) {
 	return tokenURL, nil
 }
 
-func (c *Client) discover(ctx context.Context) (string, error) {
+func (c *ClientCredentials) discover(ctx context.Context) (string, error) {
 	req, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodGet,

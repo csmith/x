@@ -1,4 +1,4 @@
-package clientcreds
+package oidc
 
 import (
 	"context"
@@ -117,24 +117,24 @@ func (f *fakeIssuer) counts() (discoveries int, tokenRequests []tokenRequest) {
 	return f.discoveries, append([]tokenRequest(nil), f.tokenRequests...)
 }
 
-func newClient(t *testing.T, issuer string, opts ...Option) *Client {
-	c, err := New(issuer, "client", "hunter2", opts...)
+func newClient(t *testing.T, issuer string, opts ...ClientCredentialsOption) *ClientCredentials {
+	c, err := NewClientCredentials(issuer, "client", "hunter2", opts...)
 	require.NoError(t, err)
 	return c
 }
 
-func TestNew_RejectsBadConfiguration(t *testing.T) {
-	_, err := New("id.example", "client", "hunter2")
+func TestNewClientCredentials_rejectsBadConfiguration(t *testing.T) {
+	_, err := NewClientCredentials("id.example", "client", "hunter2")
 	require.Error(t, err, "issuer without scheme")
 
-	_, err = New("https://id.example", "", "hunter2")
+	_, err = NewClientCredentials("https://id.example", "", "hunter2")
 	require.Error(t, err, "missing client ID")
 
-	_, err = New("https://id.example", "client", "")
+	_, err = NewClientCredentials("https://id.example", "client", "")
 	require.Error(t, err, "missing client secret")
 }
 
-func TestClient_DiscoversLazily(t *testing.T) {
+func TestClientCredentials_DiscoversLazily(t *testing.T) {
 	issuer := newFakeIssuer(t)
 	c := newClient(t, issuer.URL)
 
@@ -150,7 +150,7 @@ func TestClient_DiscoversLazily(t *testing.T) {
 	assert.Equal(t, 1, discoveries, "discovery should be shared between resources")
 }
 
-func TestClient_StartsWhileIssuerDown(t *testing.T) {
+func TestClientCredentials_StartsWhileIssuerDown(t *testing.T) {
 	issuer := newFakeIssuer(t)
 	issuer.set(func(f *fakeIssuer) { f.down = true })
 
@@ -164,7 +164,7 @@ func TestClient_StartsWhileIssuerDown(t *testing.T) {
 	assert.Equal(t, "token-1-for-https://api.example", token.AccessToken)
 }
 
-func TestClient_StartsWhileIssuerUnreachable(t *testing.T) {
+func TestClientCredentials_StartsWhileIssuerUnreachable(t *testing.T) {
 	server := httptest.NewServer(http.NotFoundHandler())
 	server.Close()
 
@@ -172,7 +172,7 @@ func TestClient_StartsWhileIssuerUnreachable(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestClient_CachesTokenPerResource(t *testing.T) {
+func TestClientCredentials_CachesTokenPerResource(t *testing.T) {
 	issuer := newFakeIssuer(t)
 	c := newClient(t, issuer.URL)
 
@@ -189,7 +189,7 @@ func TestClient_CachesTokenPerResource(t *testing.T) {
 	assert.Len(t, requests, 2)
 }
 
-func TestClient_RefreshesExpiredToken(t *testing.T) {
+func TestClientCredentials_RefreshesExpiredToken(t *testing.T) {
 	issuer := newFakeIssuer(t)
 	issuer.set(func(f *fakeIssuer) { f.expiresIn = 1 })
 	c := newClient(t, issuer.URL)
@@ -211,7 +211,7 @@ func TestClient_RefreshesExpiredToken(t *testing.T) {
 	assert.Equal(t, 1, discoveries, "refreshing should reuse the discovered endpoint")
 }
 
-func TestClient_RetriesFailedTokenRequest(t *testing.T) {
+func TestClientCredentials_RetriesFailedTokenRequest(t *testing.T) {
 	issuer := newFakeIssuer(t)
 	issuer.set(func(f *fakeIssuer) { f.headerOnly = true })
 	c := newClient(t, issuer.URL, WithHeaderAuth())
@@ -224,7 +224,7 @@ func TestClient_RetriesFailedTokenRequest(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestClient_RejectsMismatchedIssuer(t *testing.T) {
+func TestClientCredentials_RejectsMismatchedIssuer(t *testing.T) {
 	issuer := newFakeIssuer(t)
 	issuer.set(func(f *fakeIssuer) { f.issuer = "https://elsewhere.example" })
 
@@ -234,18 +234,18 @@ func TestClient_RejectsMismatchedIssuer(t *testing.T) {
 	assert.Empty(t, requests)
 }
 
-func TestClient_AcceptsTrailingSlashOnIssuer(t *testing.T) {
+func TestClientCredentials_AcceptsTrailingSlashOnIssuer(t *testing.T) {
 	_, err := newClient(t, newFakeIssuer(t).URL+"/").Token(context.Background(), "https://api.example")
 	require.NoError(t, err)
 }
 
-func TestClient_EmptyResourceSendsNoParameter(t *testing.T) {
+func TestClientCredentials_EmptyResourceSendsNoParameter(t *testing.T) {
 	token, err := newClient(t, newFakeIssuer(t).URL).Token(context.Background(), "")
 	require.NoError(t, err)
 	assert.Equal(t, "token-1-for-", token.AccessToken)
 }
 
-func TestWithHTTPClient(t *testing.T) {
+func TestClientCredentials_WithHTTPClient(t *testing.T) {
 	issuer := newFakeIssuer(t)
 	var requests int
 	_, err := newClient(
@@ -266,7 +266,7 @@ func TestWithHTTPClient(t *testing.T) {
 	assert.Equal(t, 2, requests, "discovery and token requests should both use the client")
 }
 
-func TestWithHeaderAuth(t *testing.T) {
+func TestClientCredentials_WithHeaderAuth(t *testing.T) {
 	issuer := newFakeIssuer(t)
 	issuer.set(func(f *fakeIssuer) { f.headerOnly = true })
 
@@ -284,7 +284,7 @@ func TestWithHeaderAuth(t *testing.T) {
 	assert.Equal(t, []tokenRequest{{resource: "https://api.example", headerAuth: true}}, requests)
 }
 
-func TestWithTrimmedResources(t *testing.T) {
+func TestClientCredentials_WithTrimmedResources(t *testing.T) {
 	issuer := newFakeIssuer(t)
 
 	token, err := newClient(t, issuer.URL).Token(context.Background(), "https://api.example/")
@@ -301,7 +301,7 @@ func TestWithTrimmedResources(t *testing.T) {
 	assert.Equal(t, "token-2-for-https://api.example", token.AccessToken, "trimmed and untrimmed should share a token")
 }
 
-func TestTokenFunc(t *testing.T) {
+func TestClientCredentials_TokenFunc(t *testing.T) {
 	c := newClient(t, newFakeIssuer(t).URL)
 	tokenFunc := c.TokenFunc("https://api.example")
 
@@ -316,7 +316,7 @@ func TestTokenFunc(t *testing.T) {
 	assert.Equal(t, "token-1-for-https://api.example", token.AccessToken, "all shapes should share the cache")
 }
 
-func TestTokenFunc_UsesCallerContext(t *testing.T) {
+func TestClientCredentials_TokenFunc_UsesCallerContext(t *testing.T) {
 	c := newClient(t, newFakeIssuer(t).URL)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -328,7 +328,7 @@ func TestTokenFunc_UsesCallerContext(t *testing.T) {
 	require.NoError(t, err, "a cancelled caller should not break later requests")
 }
 
-func TestTokenSource(t *testing.T) {
+func TestClientCredentials_TokenSource(t *testing.T) {
 	source := newClient(t, newFakeIssuer(t).URL).TokenSource("https://api.example")
 
 	for range 2 {
@@ -338,7 +338,7 @@ func TestTokenSource(t *testing.T) {
 	}
 }
 
-func TestTransport(t *testing.T) {
+func TestClientCredentials_Transport(t *testing.T) {
 	issuer := newFakeIssuer(t)
 	api := httptest.NewServer(
 		http.HandlerFunc(
@@ -360,7 +360,7 @@ func TestTransport(t *testing.T) {
 	assert.Equal(t, "Bearer token-1-for-"+api.URL, string(body))
 }
 
-func TestTransport_FailsWithoutToken(t *testing.T) {
+func TestClientCredentials_Transport_FailsWithoutToken(t *testing.T) {
 	issuer := newFakeIssuer(t)
 	issuer.set(func(f *fakeIssuer) { f.down = true })
 	var sent bool

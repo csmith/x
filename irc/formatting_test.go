@@ -1,4 +1,4 @@
-package ircfmt
+package irc
 
 import (
 	"testing"
@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestParse(t *testing.T) {
+func TestParseFormatting(t *testing.T) {
 	tests := []struct {
 		name string
 		text string
@@ -97,13 +97,13 @@ func TestParse(t *testing.T) {
 		t.Run(
 			tt.name,
 			func(t *testing.T) {
-				assert.Equal(t, tt.want, Parse(tt.text))
+				assert.Equal(t, tt.want, ParseFormatting(tt.text))
 			},
 		)
 	}
 }
 
-func TestParse_malformedColours(t *testing.T) {
+func TestParseFormatting_malformedColours(t *testing.T) {
 	tests := []struct {
 		name string
 		text string
@@ -129,13 +129,13 @@ func TestParse_malformedColours(t *testing.T) {
 		t.Run(
 			tt.name,
 			func(t *testing.T) {
-				assert.Equal(t, tt.want, Parse(tt.text))
+				assert.Equal(t, tt.want, ParseFormatting(tt.text))
 			},
 		)
 	}
 }
 
-func TestStrip(t *testing.T) {
+func TestStripFormatting(t *testing.T) {
 	tests := []struct {
 		name string
 		text string
@@ -159,8 +159,8 @@ func TestStrip(t *testing.T) {
 		t.Run(
 			tt.name,
 			func(t *testing.T) {
-				assert.Equal(t, tt.want, Strip(tt.text))
-				assert.Equal(t, tt.want, string(Strip([]byte(tt.text))))
+				assert.Equal(t, tt.want, StripFormatting(tt.text))
+				assert.Equal(t, tt.want, string(StripFormatting([]byte(tt.text))))
 			},
 		)
 	}

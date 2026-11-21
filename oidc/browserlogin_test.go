@@ -1,4 +1,4 @@
-package login
+package oidc
 
 import (
 	"context"
@@ -21,10 +21,10 @@ const testBase = "https://service.example"
 
 type subjectKey struct{}
 
-type harness struct {
+type loginHarness struct {
 	t        *testing.T
 	provider *oidctest.Provider
-	login    *Login
+	login    *BrowserLogin
 	handler  http.Handler
 	now      time.Time
 	cookies  map[string]*http.Cookie
@@ -32,12 +32,12 @@ type harness struct {
 	header   http.Header
 }
 
-func newHarness(t *testing.T, change func(*Config)) *harness {
+func newLoginHarness(t *testing.T, change func(*BrowserLoginConfig)) *loginHarness {
 	t.Helper()
 	now := time.Date(2026, 11, 8, 14, 0, 0, 0, time.UTC)
 	p := oidctest.New(t, now)
 
-	cfg := Config{
+	cfg := BrowserLoginConfig{
 		Issuer:         p.Issuer(),
 		ClientID:       oidctest.ClientID,
 		ClientSecret:   oidctest.ClientSecret,
@@ -52,10 +52,10 @@ func newHarness(t *testing.T, change func(*Config)) *harness {
 	if change != nil {
 		change(&cfg)
 	}
-	l, err := New(cfg)
+	l, err := NewBrowserLogin(cfg)
 	require.NoError(t, err)
 
-	h := &harness{
+	h := &loginHarness{
 		t:        t,
 		provider: p,
 		login:    l,
@@ -77,7 +77,7 @@ func newHarness(t *testing.T, change func(*Config)) *harness {
 
 // do sends a request with the cookies the harness holds, and keeps any the
 // response sets, the way a browser would.
-func (h *harness) do(method, target string) *httptest.ResponseRecorder {
+func (h *loginHarness) do(method, target string) *httptest.ResponseRecorder {
 	h.t.Helper()
 	req := httptest.NewRequestWithContext(h.t.Context(), method, target, nil)
 	for _, c := range h.cookies {
@@ -101,25 +101,25 @@ func (h *harness) do(method, target string) *httptest.ResponseRecorder {
 
 // startLogin requests target without a session and plays the browser's
 // visit to the provider, returning the state to come back with.
-func (h *harness) startLogin(target string) string {
+func (h *loginHarness) startLogin(target string) string {
 	h.t.Helper()
 	rec := h.do(http.MethodGet, target)
 	require.Equal(h.t, http.StatusFound, rec.Code)
 	return h.provider.Authorize(rec.Header().Get("Location")).Get("state")
 }
 
-func (h *harness) callback(state string) *httptest.ResponseRecorder {
+func (h *loginHarness) callback(state string) *httptest.ResponseRecorder {
 	h.t.Helper()
 	return h.do(http.MethodGet, CallbackPath+"?code="+oidctest.Code+"&state="+url.QueryEscape(state))
 }
 
-func (h *harness) logIn() *httptest.ResponseRecorder {
+func (h *loginHarness) logIn() *httptest.ResponseRecorder {
 	h.t.Helper()
 	return h.callback(h.startLogin("/"))
 }
 
-func TestNew_requiresConfig(t *testing.T) {
-	valid := Config{
+func TestNewBrowserLogin_requiresConfig(t *testing.T) {
+	valid := BrowserLoginConfig{
 		Issuer:       "https://id.example",
 		ClientID:     "c",
 		ClientSecret: "s",
@@ -127,19 +127,19 @@ func TestNew_requiresConfig(t *testing.T) {
 		BaseURL:      testBase,
 	}
 	baseURLFunc := func(context.Context) (string, error) { return testBase, nil }
-	tests := map[string]func(*Config){
-		"no issuer":            func(c *Config) { c.Issuer = "" },
-		"no client ID":         func(c *Config) { c.ClientID = "" },
-		"no client secret":     func(c *Config) { c.ClientSecret = "" },
-		"short session key":    func(c *Config) { c.SessionKey = strings.Repeat("k", 31) },
-		"no base URL":          func(c *Config) { c.BaseURL = "" },
-		"two base URLs":        func(c *Config) { c.BaseURLFunc = baseURLFunc },
-		"relative base URL":    func(c *Config) { c.BaseURL = "service.example" },
-		"relative exempt path": func(c *Config) { c.ExemptPaths = []string{"metrics"} },
-		"unclean exempt path":  func(c *Config) { c.ExemptPaths = []string{"/a/../metrics"} },
-		"root exempt prefix":   func(c *Config) { c.ExemptPrefixes = []string{"/"} },
-		"trailing slash":       func(c *Config) { c.ExemptPrefixes = []string{"/static/"} },
-		"unclean bearer path":  func(c *Config) { c.BearerPrefix = "/api/" },
+	tests := map[string]func(*BrowserLoginConfig){
+		"no issuer":            func(c *BrowserLoginConfig) { c.Issuer = "" },
+		"no client ID":         func(c *BrowserLoginConfig) { c.ClientID = "" },
+		"no client secret":     func(c *BrowserLoginConfig) { c.ClientSecret = "" },
+		"short session key":    func(c *BrowserLoginConfig) { c.SessionKey = strings.Repeat("k", 31) },
+		"no base URL":          func(c *BrowserLoginConfig) { c.BaseURL = "" },
+		"two base URLs":        func(c *BrowserLoginConfig) { c.BaseURLFunc = baseURLFunc },
+		"relative base URL":    func(c *BrowserLoginConfig) { c.BaseURL = "service.example" },
+		"relative exempt path": func(c *BrowserLoginConfig) { c.ExemptPaths = []string{"metrics"} },
+		"unclean exempt path":  func(c *BrowserLoginConfig) { c.ExemptPaths = []string{"/a/../metrics"} },
+		"root exempt prefix":   func(c *BrowserLoginConfig) { c.ExemptPrefixes = []string{"/"} },
+		"trailing slash":       func(c *BrowserLoginConfig) { c.ExemptPrefixes = []string{"/static/"} },
+		"unclean bearer path":  func(c *BrowserLoginConfig) { c.BearerPrefix = "/api/" },
 	}
 	for name, change := range tests {
 		t.Run(
@@ -147,17 +147,17 @@ func TestNew_requiresConfig(t *testing.T) {
 			func(t *testing.T) {
 				cfg := valid
 				change(&cfg)
-				_, err := New(cfg)
+				_, err := NewBrowserLogin(cfg)
 				assert.Error(t, err)
 			},
 		)
 	}
-	_, err := New(valid)
+	_, err := NewBrowserLogin(valid)
 	assert.NoError(t, err)
 }
 
-func TestLogin_roundTripReturnsToTheOriginalPage(t *testing.T) {
-	h := newHarness(t, nil)
+func TestBrowserLogin_roundTripReturnsToTheOriginalPage(t *testing.T) {
+	h := newLoginHarness(t, nil)
 
 	rec := h.do(http.MethodGet, "/things/1?tab=logs")
 	require.Equal(t, http.StatusFound, rec.Code)
@@ -185,8 +185,8 @@ func TestLogin_roundTripReturnsToTheOriginalPage(t *testing.T) {
 	assert.Equal(t, oidctest.Subject+" /things/1?tab=logs", rec.Body.String())
 }
 
-func TestLogin_severalTabsLogInAtOnce(t *testing.T) {
-	h := newHarness(t, nil)
+func TestBrowserLogin_severalTabsLogInAtOnce(t *testing.T) {
+	h := newLoginHarness(t, nil)
 
 	first := h.startLogin("/one")
 
@@ -207,8 +207,8 @@ func TestLogin_severalTabsLogInAtOnce(t *testing.T) {
 	assert.Equal(t, "/one", rec.Header().Get("Location"))
 }
 
-func TestLogin_sessionLastsUntilFiveInTheMorningByDefault(t *testing.T) {
-	h := newHarness(t, nil)
+func TestBrowserLogin_sessionLastsUntilFiveInTheMorningByDefault(t *testing.T) {
+	h := newLoginHarness(t, nil)
 	h.logIn()
 
 	// 14:00 UTC on 8 November is 14:00 in London; the session runs to 05:00 on
@@ -226,8 +226,8 @@ func TestLogin_sessionLastsUntilFiveInTheMorningByDefault(t *testing.T) {
 	assert.Equal(t, http.StatusFound, h.do(http.MethodGet, "/").Code)
 }
 
-func TestLogin_customExpiry(t *testing.T) {
-	h := newHarness(t, func(c *Config) { c.Expiry = After(time.Hour) })
+func TestBrowserLogin_customExpiry(t *testing.T) {
+	h := newLoginHarness(t, func(c *BrowserLoginConfig) { c.Expiry = ExpireAfter(time.Hour) })
 	h.logIn()
 
 	assert.Equal(t, h.now.Add(time.Hour), h.cookies[sessionCookie].Expires.UTC())
@@ -238,17 +238,17 @@ func TestLogin_customExpiry(t *testing.T) {
 	assert.Equal(t, http.StatusFound, h.do(http.MethodGet, "/").Code)
 }
 
-func TestLogin_expiryInThePastFailsTheLogin(t *testing.T) {
-	h := newHarness(t, func(c *Config) { c.Expiry = After(0) })
+func TestBrowserLogin_expiryInThePastFailsTheLogin(t *testing.T) {
+	h := newLoginHarness(t, func(c *BrowserLoginConfig) { c.Expiry = ExpireAfter(0) })
 
 	assert.Equal(t, http.StatusInternalServerError, h.logIn().Code)
 	assert.NotContains(t, h.cookies, sessionCookie)
 }
 
-func TestDailyAt_acrossClockChanges(t *testing.T) {
+func TestExpireDailyAt_acrossClockChanges(t *testing.T) {
 	london, err := time.LoadLocation("Europe/London")
 	require.NoError(t, err)
-	expiry := DailyAt(5, london)
+	expiry := ExpireDailyAt(5, london)
 
 	// The clocks go forward at 01:00 UTC on 29 March 2026 and back at 01:00 UTC
 	// on 25 October 2026.
@@ -276,8 +276,8 @@ func TestDailyAt_acrossClockChanges(t *testing.T) {
 	)
 }
 
-func TestLogin_exemptPaths(t *testing.T) {
-	h := newHarness(t, nil)
+func TestBrowserLogin_exemptPaths(t *testing.T) {
+	h := newLoginHarness(t, nil)
 
 	for _, p := range []string{"/static/icon.svg", "/static", "/static/", "/metrics", "/api/hooks/x"} {
 		rec := h.do(http.MethodGet, p)
@@ -305,8 +305,8 @@ func TestLogin_exemptPaths(t *testing.T) {
 	}
 }
 
-func TestLogin_nonNavigationIsNotRedirected(t *testing.T) {
-	h := newHarness(t, nil)
+func TestBrowserLogin_nonNavigationIsNotRedirected(t *testing.T) {
+	h := newLoginHarness(t, nil)
 	assert.Equal(t, http.StatusUnauthorized, h.do(http.MethodPost, "/").Code)
 
 	h.header.Set("Sec-Fetch-Mode", "cors")
@@ -316,8 +316,8 @@ func TestLogin_nonNavigationIsNotRedirected(t *testing.T) {
 	assert.Equal(t, http.StatusFound, h.do(http.MethodGet, "/").Code)
 }
 
-func TestLogin_rejectsCrossOriginRequestsWithASession(t *testing.T) {
-	h := newHarness(t, nil)
+func TestBrowserLogin_rejectsCrossOriginRequestsWithASession(t *testing.T) {
+	h := newLoginHarness(t, nil)
 	h.logIn()
 
 	h.header.Set("Sec-Fetch-Site", "cross-site")
@@ -328,15 +328,15 @@ func TestLogin_rejectsCrossOriginRequestsWithASession(t *testing.T) {
 	assert.Equal(t, http.StatusOK, h.do(http.MethodPost, "/things").Code)
 }
 
-func TestLogin_ignoresBearerTokensUnlessConfigured(t *testing.T) {
-	h := newHarness(t, nil)
+func TestBrowserLogin_ignoresBearerTokensUnlessConfigured(t *testing.T) {
+	h := newLoginHarness(t, nil)
 	h.token = h.provider.AccessToken(testBase, h.now, nil)
 
 	assert.Equal(t, http.StatusFound, h.do(http.MethodGet, "/api/things").Code)
 }
 
-func TestLogin_bearerPrefixNeedsAnAccessToken(t *testing.T) {
-	h := newHarness(t, func(c *Config) { c.BearerPrefix = "/api" })
+func TestBrowserLogin_bearerPrefixNeedsAnAccessToken(t *testing.T) {
+	h := newLoginHarness(t, func(c *BrowserLoginConfig) { c.BearerPrefix = "/api" })
 
 	paths := []string{"/api/things", "/api/things/1", "/api"}
 	for _, p := range paths {
@@ -360,8 +360,8 @@ func TestLogin_bearerPrefixNeedsAnAccessToken(t *testing.T) {
 	assert.Equal(t, `Bearer error="invalid_token"`, rec.Header().Get("WWW-Authenticate"))
 }
 
-func TestLogin_bearerPrefixDoesNotAcceptASession(t *testing.T) {
-	h := newHarness(t, func(c *Config) { c.BearerPrefix = "/api" })
+func TestBrowserLogin_bearerPrefixDoesNotAcceptASession(t *testing.T) {
+	h := newLoginHarness(t, func(c *BrowserLoginConfig) { c.BearerPrefix = "/api" })
 	h.logIn()
 
 	rec := h.do(http.MethodGet, "/api/things")
@@ -369,8 +369,8 @@ func TestLogin_bearerPrefixDoesNotAcceptASession(t *testing.T) {
 	assert.Equal(t, "Bearer", rec.Header().Get("WWW-Authenticate"))
 }
 
-func TestLogin_bearerPrefixIsNotFooledByEscapes(t *testing.T) {
-	h := newHarness(t, func(c *Config) { c.BearerPrefix = "/api" })
+func TestBrowserLogin_bearerPrefixIsNotFooledByEscapes(t *testing.T) {
+	h := newLoginHarness(t, func(c *BrowserLoginConfig) { c.BearerPrefix = "/api" })
 	h.token = h.provider.AccessToken(testBase, h.now, nil)
 
 	for _, p := range []string{"/things/%2E%2E%2Fapi%2Fthings", "/api/../things", "/%61pi/things"} {
@@ -378,8 +378,8 @@ func TestLogin_bearerPrefixIsNotFooledByEscapes(t *testing.T) {
 	}
 }
 
-func TestLogin_bearerAnywhere(t *testing.T) {
-	h := newHarness(t, func(c *Config) { c.BearerAnywhere = true })
+func TestBrowserLogin_bearerAnywhere(t *testing.T) {
+	h := newLoginHarness(t, func(c *BrowserLoginConfig) { c.BearerAnywhere = true })
 	assert.Equal(t, http.StatusFound, h.do(http.MethodGet, "/things").Code, "pages still need a login without a token")
 
 	h.token = h.provider.AccessToken(testBase, h.now, nil)
@@ -391,8 +391,8 @@ func TestLogin_bearerAnywhere(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, h.do(http.MethodGet, "/things").Code)
 }
 
-func TestLogin_providerDownIsRetried(t *testing.T) {
-	h := newHarness(t, func(c *Config) { c.BearerPrefix = "/api" })
+func TestBrowserLogin_providerDownIsRetried(t *testing.T) {
+	h := newLoginHarness(t, func(c *BrowserLoginConfig) { c.BearerPrefix = "/api" })
 	h.provider.SetDown(true)
 	assert.Equal(t, http.StatusBadGateway, h.do(http.MethodGet, "/").Code)
 
@@ -404,11 +404,11 @@ func TestLogin_providerDownIsRetried(t *testing.T) {
 	assert.Equal(t, http.StatusFound, h.do(http.MethodGet, "/").Code)
 }
 
-func TestLogin_baseURLFunc(t *testing.T) {
+func TestBrowserLogin_baseURLFunc(t *testing.T) {
 	calls := 0
-	h := newHarness(
+	h := newLoginHarness(
 		t,
-		func(c *Config) {
+		func(c *BrowserLoginConfig) {
 			c.BaseURL = ""
 			c.BaseURLFunc = func(context.Context) (string, error) {
 				calls++
@@ -431,23 +431,23 @@ func TestLogin_baseURLFunc(t *testing.T) {
 	assert.False(t, h.cookies[sessionCookie].Secure, "cookies over plain HTTP can't be Secure")
 }
 
-func TestLogin_callbackRejects(t *testing.T) {
+func TestBrowserLogin_callbackRejects(t *testing.T) {
 	tests := map[string]struct {
 		code   int
-		target func(h *harness) string
+		target func(h *loginHarness) string
 		method string
 	}{
 		"an unknown state": {
 			code:   http.StatusBadRequest,
-			target: func(*harness) string { return CallbackPath + "?code=" + oidctest.Code + "&state=x" },
+			target: func(*loginHarness) string { return CallbackPath + "?code=" + oidctest.Code + "&state=x" },
 		},
 		"no state": {
 			code:   http.StatusBadRequest,
-			target: func(*harness) string { return CallbackPath + "?code=" + oidctest.Code },
+			target: func(*loginHarness) string { return CallbackPath + "?code=" + oidctest.Code },
 		},
 		"an expired login": {
 			code: http.StatusBadRequest,
-			target: func(h *harness) string {
+			target: func(h *loginHarness) string {
 				state := h.startLogin("/")
 				h.now = h.now.Add(loginTimeout)
 				return CallbackPath + "?code=" + oidctest.Code + "&state=" + state
@@ -455,11 +455,11 @@ func TestLogin_callbackRejects(t *testing.T) {
 		},
 		"a wrong code": {
 			code:   http.StatusBadGateway,
-			target: func(h *harness) string { return CallbackPath + "?code=wrong&state=" + h.startLogin("/") },
+			target: func(h *loginHarness) string { return CallbackPath + "?code=wrong&state=" + h.startLogin("/") },
 		},
 		"a mismatched nonce": {
 			code: http.StatusForbidden,
-			target: func(h *harness) string {
+			target: func(h *loginHarness) string {
 				state := h.startLogin("/")
 				h.provider.SetNonce("other")
 				return CallbackPath + "?code=" + oidctest.Code + "&state=" + state
@@ -467,11 +467,11 @@ func TestLogin_callbackRejects(t *testing.T) {
 		},
 		"a refusal": {
 			code:   http.StatusForbidden,
-			target: func(h *harness) string { return CallbackPath + "?error=access_denied&state=" + h.startLogin("/") },
+			target: func(h *loginHarness) string { return CallbackPath + "?error=access_denied&state=" + h.startLogin("/") },
 		},
 		"a POST": {
 			code: http.StatusMethodNotAllowed,
-			target: func(h *harness) string {
+			target: func(h *loginHarness) string {
 				return CallbackPath + "?code=" + oidctest.Code + "&state=" + h.startLogin("/")
 			},
 			method: http.MethodPost,
@@ -481,7 +481,7 @@ func TestLogin_callbackRejects(t *testing.T) {
 		t.Run(
 			name,
 			func(t *testing.T) {
-				h := newHarness(t, nil)
+				h := newLoginHarness(t, nil)
 				method := http.MethodGet
 				if tt.method != "" {
 					method = tt.method
@@ -493,8 +493,8 @@ func TestLogin_callbackRejects(t *testing.T) {
 	}
 }
 
-func TestLogin_stateCannotBeReused(t *testing.T) {
-	h := newHarness(t, nil)
+func TestBrowserLogin_stateCannotBeReused(t *testing.T) {
+	h := newLoginHarness(t, nil)
 	state := h.startLogin("/")
 	stateCookie := h.cookies[stateCookiePrefix+state]
 	require.Equal(t, http.StatusFound, h.callback(state).Code)
@@ -506,11 +506,11 @@ func TestLogin_stateCannotBeReused(t *testing.T) {
 	assert.Equal(t, http.StatusBadGateway, h.callback(state).Code, "the provider won't take the code twice")
 }
 
-func TestLogin_rejectsTamperedCookies(t *testing.T) {
+func TestBrowserLogin_rejectsTamperedCookies(t *testing.T) {
 	t.Run(
 		"a changed subject",
 		func(t *testing.T) {
-			h := newHarness(t, nil)
+			h := newLoginHarness(t, nil)
 			h.logIn()
 			session := h.cookies[sessionCookie]
 			encoded, sig, _ := strings.Cut(session.Value, ".")
@@ -526,7 +526,7 @@ func TestLogin_rejectsTamperedCookies(t *testing.T) {
 	t.Run(
 		"a pending login used as a session",
 		func(t *testing.T) {
-			h := newHarness(t, nil)
+			h := newLoginHarness(t, nil)
 			state := h.startLogin("/")
 			h.cookies[sessionCookie] = &http.Cookie{
 				Name:  sessionCookie,
@@ -539,9 +539,9 @@ func TestLogin_rejectsTamperedCookies(t *testing.T) {
 	t.Run(
 		"a session signed with another key",
 		func(t *testing.T) {
-			other := newHarness(t, func(c *Config) { c.SessionKey = strings.Repeat("j", 32) })
+			other := newLoginHarness(t, func(c *BrowserLoginConfig) { c.SessionKey = strings.Repeat("j", 32) })
 			other.logIn()
-			h := newHarness(t, nil)
+			h := newLoginHarness(t, nil)
 			h.cookies[sessionCookie] = other.cookies[sessionCookie]
 
 			assert.Equal(t, http.StatusFound, h.do(http.MethodGet, "/").Code)
