@@ -8,23 +8,46 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 	"unicode/utf16"
 )
 
 // Launch starts a program detached from this one, in its own session (or
-// process group on Windows) with no standard input or output, and returns
-// without waiting for it. The program is reaped in the background once it
-// exits, so it never lingers as a zombie.
-func Launch(name string, args ...string) error {
+// process group on Windows), and returns without waiting for it. The program
+// is reaped in the background once it exits, so it never lingers as a zombie.
+// Its standard streams are unconnected unless given with [WithStdin],
+// [WithStdout] or [WithStderr].
+func Launch(name string, args []string, opts ...LaunchOption) error {
 	c := exec.CommandContext(context.Background(), name, args...)
 	c.SysProcAttr = detachedAttr()
+	for _, opt := range opts {
+		opt(c)
+	}
 	if err := c.Start(); err != nil {
 		return err
 	}
 	go func() { _ = c.Wait() }()
 	return nil
+}
+
+// LaunchOption configures [Launch].
+type LaunchOption func(*exec.Cmd)
+
+// WithStdin connects the program's standard input to r.
+func WithStdin(r io.Reader) LaunchOption {
+	return func(c *exec.Cmd) { c.Stdin = r }
+}
+
+// WithStdout connects the program's standard output to w.
+func WithStdout(w io.Writer) LaunchOption {
+	return func(c *exec.Cmd) { c.Stdout = w }
+}
+
+// WithStderr connects the program's standard error to w.
+func WithStderr(w io.Writer) LaunchOption {
+	return func(c *exec.Cmd) { c.Stderr = w }
 }
 
 // Open opens a URL or file with the desktop's default handler, started the
@@ -34,7 +57,7 @@ func Open(url string) error {
 	if strings.HasPrefix(url, "-") {
 		return fmt.Errorf("refusing to open %q, which looks like an option", url)
 	}
-	return Launch(openCommand[0], append(openCommand[1:], url)...)
+	return Launch(openCommand[0], append(openCommand[1:], url))
 }
 
 // Copy puts text on the clipboard, waiting for the clipboard tool to finish.

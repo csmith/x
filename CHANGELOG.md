@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Add `http.ServeLocalListener` for serving locally on a listener the caller opened
+- `desktop.Launch` now takes its arguments as a slice, followed by options to connect the program's standard streams
 
 ## v0.0.2 - 2026-11-21
 
