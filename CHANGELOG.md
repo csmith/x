@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Add `desktop` package for launching programs, opening URLs, the clipboard and per-user directories
+- Add `file` package for atomic file writes
+- Add HTTP serve and graceful shutdown helpers, including a local mode with a Host check
+- Add `ui` package with relative time formatting
+- `tailscale.NewServer` accepts a logger, and logs with `component=tailscale` instead of `source=tailscale` by default
+
 ## v0.0.1 - 2026-11-21
 
 _Initial version, covering some OIDC functionality, Gio utilities, IRC formatting and tailscale serving_
