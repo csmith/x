@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.0.2 - 2026-11-21
 
 - Add `desktop` package for launching programs, opening URLs, the clipboard and per-user directories
 - Add `file` package for atomic file writes
