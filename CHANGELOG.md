@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add `temporal.RunWorker` for running a worker until its context is done or it stops itself
+
 ## v0.0.3 - 2026-11-21
 
 - Add `file.WalkGitProjects` and `file.EnclosingGitProject` for finding git projects

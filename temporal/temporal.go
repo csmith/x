@@ -1,4 +1,5 @@
-// Package temporal builds options for connecting to a Temporal frontend.
+// Package temporal builds options for connecting to a Temporal frontend, and
+// runs workers.
 package temporal
 
 import (
