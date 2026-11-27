@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## v0.0.4 - 2026-11-27
 
 - Add `temporal.RunWorker` for running a worker until its context is done or it stops itself
+- Dependency updates
 
 ## v0.0.3 - 2026-11-21
 
