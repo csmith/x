@@ -179,7 +179,9 @@ func (p *Provider) serveKeys(w http.ResponseWriter, _ *http.Request) {
 	p.writeJSON(
 		w,
 		jose.JSONWebKeySet{
-			Keys: []jose.JSONWebKey{{Key: &p.Key.PublicKey, Algorithm: "RS256", Use: "sig"}},
+			Keys: []jose.JSONWebKey{
+				{Key: &p.Key.PublicKey, Algorithm: "RS256", Use: "sig"},
+			},
 		},
 	)
 }
@@ -195,7 +197,10 @@ func (p *Provider) serveToken(w http.ResponseWriter, r *http.Request) {
 
 	user, pass, _ := r.BasicAuth()
 	sum := sha256.Sum256([]byte(r.PostFormValue("code_verifier")))
-	if challenge == "" || user != ClientID || pass != ClientSecret || r.PostFormValue("code") != Code ||
+	if challenge == "" ||
+		user != ClientID ||
+		pass != ClientSecret ||
+		r.PostFormValue("code") != Code ||
 		base64.RawURLEncoding.EncodeToString(sum[:]) != challenge {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)

@@ -34,9 +34,21 @@ func TestCopy_fallbackOrder(t *testing.T) {
 		available []string
 		want      string
 	}{
-		{"wl-copy first", []string{"wl-copy", "xclip", "xsel"}, "wl-copy \nhello\n"},
-		{"xclip without wl-copy", []string{"xclip", "xsel"}, "xclip -selection clipboard\nhello\n"},
-		{"xsel last", []string{"xsel"}, "xsel --clipboard --input\nhello\n"},
+		{
+			"wl-copy first",
+			[]string{"wl-copy", "xclip", "xsel"},
+			"wl-copy \nhello\n",
+		},
+		{
+			"xclip without wl-copy",
+			[]string{"xclip", "xsel"},
+			"xclip -selection clipboard\nhello\n",
+		},
+		{
+			"xsel last",
+			[]string{"xsel"},
+			"xsel --clipboard --input\nhello\n",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(

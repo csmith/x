@@ -57,15 +57,7 @@ func TestSendMail_usesStartTLSWhenOffered(t *testing.T) {
 	serverConfig, clientConfig := testTLSConfigs(t)
 	addr, sessions, _ := fakeServer{starttls: serverConfig}.start(t)
 
-	err := sendMail(
-		t.Context(),
-		addr,
-		clientConfig,
-		nil,
-		"a@example.com",
-		[]string{"b@example.com"},
-		[]byte(message),
-	)
+	err := sendMail(t.Context(), addr, clientConfig, nil, "a@example.com", []string{"b@example.com"}, []byte(message))
 
 	require.NoError(t, err)
 	session := <-sessions
@@ -165,7 +157,9 @@ func TestSendMail_failsIfAuthNotOffered(t *testing.T) {
 }
 
 func TestSendMail_returnsRejection(t *testing.T) {
-	addr, _, _ := fakeServer{replies: map[string]string{".": "554 no thanks"}}.start(t)
+	addr, _, _ := fakeServer{
+		replies: map[string]string{".": "554 no thanks"},
+	}.start(t)
 
 	err := SendMail(t.Context(), addr, nil, "a@example.com", []string{"b@example.com"}, []byte(message))
 
@@ -173,7 +167,9 @@ func TestSendMail_returnsRejection(t *testing.T) {
 }
 
 func TestSendMail_closesConnectionWhenCancelledMidSend(t *testing.T) {
-	addr, sessions, stalled := fakeServer{replies: map[string]string{".": stall}}.start(t)
+	addr, sessions, stalled := fakeServer{
+		replies: map[string]string{".": stall},
+	}.start(t)
 	ctx, cancel := context.WithCancel(t.Context())
 
 	result := sendAsync(ctx, addr)
@@ -199,7 +195,9 @@ func TestSendMail_returnsCauseWhenCancelledBeforeDial(t *testing.T) {
 }
 
 func TestSendMail_stopsAtDeadline(t *testing.T) {
-	addr, _, _ := fakeServer{replies: map[string]string{"MAIL": stall}}.start(t)
+	addr, _, _ := fakeServer{
+		replies: map[string]string{"MAIL": stall},
+	}.start(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
 
@@ -209,7 +207,9 @@ func TestSendMail_stopsAtDeadline(t *testing.T) {
 }
 
 func TestSendMail_succeedsIfQuitFails(t *testing.T) {
-	addr, sessions, _ := fakeServer{replies: map[string]string{"QUIT": hangUp}}.start(t)
+	addr, sessions, _ := fakeServer{
+		replies: map[string]string{"QUIT": hangUp},
+	}.start(t)
 
 	err := SendMail(t.Context(), addr, nil, "a@example.com", []string{"b@example.com"}, []byte(message))
 
@@ -218,7 +218,9 @@ func TestSendMail_succeedsIfQuitFails(t *testing.T) {
 }
 
 func TestSendMail_succeedsIfCancelledDuringQuit(t *testing.T) {
-	addr, sessions, stalled := fakeServer{replies: map[string]string{"QUIT": stall}}.start(t)
+	addr, sessions, stalled := fakeServer{
+		replies: map[string]string{"QUIT": stall},
+	}.start(t)
 	ctx, cancel := context.WithCancel(t.Context())
 
 	result := sendAsync(ctx, addr)
@@ -427,6 +429,13 @@ func testTLSConfigs(t *testing.T) (server, client *tls.Config) {
 
 	pool := x509.NewCertPool()
 	pool.AddCert(cert)
-	return &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}}},
+	return &tls.Config{
+			Certificates: []tls.Certificate{
+				{
+					Certificate: [][]byte{der},
+					PrivateKey:  key,
+				},
+			},
+		},
 		&tls.Config{RootCAs: pool, ServerName: "127.0.0.1"}
 }

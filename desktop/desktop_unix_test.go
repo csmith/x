@@ -138,12 +138,7 @@ func TestLaunch_connectsStreams(t *testing.T) {
 	t.Setenv(echoEnv, "1")
 	var stdout, stderr syncBuffer
 
-	r := launchHelper(
-		t,
-		WithStdin(strings.NewReader("hello")),
-		WithStdout(&stdout),
-		WithStderr(&stderr),
-	)
+	r := launchHelper(t, WithStdin(strings.NewReader("hello")), WithStdout(&stdout), WithStderr(&stderr))
 
 	assert.False(t, r.nullIn, "stdin")
 	assert.False(t, r.nullOut, "stdout")

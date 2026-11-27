@@ -281,7 +281,13 @@ func TestClientCredentials_WithHeaderAuth(t *testing.T) {
 	assert.Equal(t, "invalid_target", retrieveErr.ErrorCode)
 
 	_, requests := issuer.counts()
-	assert.Equal(t, []tokenRequest{{resource: "https://api.example", headerAuth: true}}, requests)
+	assert.Equal(
+		t,
+		[]tokenRequest{
+			{resource: "https://api.example", headerAuth: true},
+		},
+		requests,
+	)
 }
 
 func TestClientCredentials_WithTrimmedResources(t *testing.T) {

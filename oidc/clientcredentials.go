@@ -205,7 +205,9 @@ func (r *resourceToken) get(ctx context.Context) (*oauth2.Token, error) {
 		AuthStyle:    r.client.authStyle,
 	}
 	if r.resource != "" {
-		cfg.EndpointParams = url.Values{"resource": {r.resource}}
+		cfg.EndpointParams = url.Values{
+			"resource": {r.resource},
+		}
 	}
 	token, err := cfg.Token(context.WithValue(ctx, oauth2.HTTPClient, r.client.httpClient))
 	if err != nil {

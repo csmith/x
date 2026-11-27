@@ -15,51 +15,91 @@ func TestDiff(t *testing.T) {
 		old, updated string
 		want         []DiffOp
 	}{
-		{"both empty", "", "", nil},
+		{
+			"both empty",
+			"",
+			"",
+			nil,
+		},
 		{
 			"identical",
-			"a\nb\n", "a\nb\n",
-			[]DiffOp{{DiffEqual, "a\n", 1, 1}, {DiffEqual, "b\n", 2, 2}},
+			"a\nb\n",
+			"a\nb\n",
+			[]DiffOp{
+				{DiffEqual, "a\n", 1, 1},
+				{DiffEqual, "b\n", 2, 2},
+			},
 		},
 		{
 			"from empty",
-			"", "a\nb\n",
-			[]DiffOp{{DiffInsert, "a\n", 1, 1}, {DiffInsert, "b\n", 1, 2}},
+			"",
+			"a\nb\n",
+			[]DiffOp{
+				{DiffInsert, "a\n", 1, 1},
+				{DiffInsert, "b\n", 1, 2},
+			},
 		},
 		{
 			"to empty",
-			"a\nb\n", "",
-			[]DiffOp{{DiffDelete, "a\n", 1, 1}, {DiffDelete, "b\n", 2, 1}},
+			"a\nb\n",
+			"",
+			[]DiffOp{
+				{DiffDelete, "a\n", 1, 1},
+				{DiffDelete, "b\n", 2, 1},
+			},
 		},
 		{
 			"pure addition",
-			"a\nc\n", "a\nb\nc\n",
-			[]DiffOp{{DiffEqual, "a\n", 1, 1}, {DiffInsert, "b\n", 2, 2}, {DiffEqual, "c\n", 2, 3}},
+			"a\nc\n",
+			"a\nb\nc\n",
+			[]DiffOp{
+				{DiffEqual, "a\n", 1, 1},
+				{DiffInsert, "b\n", 2, 2},
+				{DiffEqual, "c\n", 2, 3},
+			},
 		},
 		{
 			"pure deletion",
-			"a\nb\nc\n", "a\nc\n",
-			[]DiffOp{{DiffEqual, "a\n", 1, 1}, {DiffDelete, "b\n", 2, 2}, {DiffEqual, "c\n", 3, 2}},
+			"a\nb\nc\n",
+			"a\nc\n",
+			[]DiffOp{
+				{DiffEqual, "a\n", 1, 1},
+				{DiffDelete, "b\n", 2, 2},
+				{DiffEqual, "c\n", 3, 2},
+			},
 		},
 		{
 			"replacement deletes first",
-			"a\nb\nc\n", "a\nx\nc\n",
-			[]DiffOp{{DiffEqual, "a\n", 1, 1}, {DiffDelete, "b\n", 2, 2}, {DiffInsert, "x\n", 3, 2}, {DiffEqual, "c\n", 3, 3}},
+			"a\nb\nc\n",
+			"a\nx\nc\n",
+			[]DiffOp{
+				{DiffEqual, "a\n", 1, 1},
+				{DiffDelete, "b\n", 2, 2},
+				{DiffInsert, "x\n", 3, 2},
+				{DiffEqual, "c\n", 3, 3},
+			},
 		},
 		{
 			"keeps common lines inside a change",
-			"a\nb\nc\nd\n", "x\nb\ny\nd\n",
+			"a\nb\nc\nd\n",
+			"x\nb\ny\nd\n",
 			[]DiffOp{
-				{DiffDelete, "a\n", 1, 1}, {DiffInsert, "x\n", 2, 1},
+				{DiffDelete, "a\n", 1, 1},
+				{DiffInsert, "x\n", 2, 1},
 				{DiffEqual, "b\n", 2, 2},
-				{DiffDelete, "c\n", 3, 3}, {DiffInsert, "y\n", 4, 3},
+				{DiffDelete, "c\n", 3, 3},
+				{DiffInsert, "y\n", 4, 3},
 				{DiffEqual, "d\n", 4, 4},
 			},
 		},
 		{
 			"missing final newline",
-			"a\n", "a",
-			[]DiffOp{{DiffDelete, "a\n", 1, 1}, {DiffInsert, "a", 2, 1}},
+			"a\n",
+			"a",
+			[]DiffOp{
+				{DiffDelete, "a\n", 1, 1},
+				{DiffInsert, "a", 2, 1},
+			},
 		},
 	}
 	for _, tt := range tests {
@@ -126,7 +166,14 @@ func TestDiffLinesTrimsCommonEndsBeforeCap(t *testing.T) {
 			changes = append(changes, op)
 		}
 	}
-	assert.Equal(t, []DiffOp{{DiffDelete, "old", 5001, 5001}, {DiffInsert, "new", 5002, 5001}}, changes)
+	assert.Equal(
+		t,
+		[]DiffOp{
+			{DiffDelete, "old", 5001, 5001},
+			{DiffInsert, "new", 5002, 5001},
+		},
+		changes,
+	)
 }
 
 func numbered(n int) string {
@@ -234,11 +281,7 @@ func TestHunks(t *testing.T) {
 }
 
 func TestUnifiedDiff_wholeFileContext(t *testing.T) {
-	assert.Equal(
-		t,
-		"@@ -1,3 +1,3 @@\n a\n-b\n+x\n c\n",
-		UnifiedDiff("a\nb\nc\n", "a\nx\nc\n", math.MaxInt),
-	)
+	assert.Equal(t, "@@ -1,3 +1,3 @@\n a\n-b\n+x\n c\n", UnifiedDiff("a\nb\nc\n", "a\nx\nc\n", math.MaxInt))
 }
 
 func TestUnifiedDiff(t *testing.T) {
@@ -247,10 +290,30 @@ func TestUnifiedDiff(t *testing.T) {
 		old, updated string
 		want         string
 	}{
-		{"identical", "a\nb\n", "a\nb\n", ""},
-		{"both empty", "", "", ""},
-		{"from empty", "", "a\nb\n", "@@ -0,0 +1,2 @@\n+a\n+b\n"},
-		{"to empty", "a\n", "", "@@ -1 +0,0 @@\n-a\n"},
+		{
+			"identical",
+			"a\nb\n",
+			"a\nb\n",
+			"",
+		},
+		{
+			"both empty",
+			"",
+			"",
+			"",
+		},
+		{
+			"from empty",
+			"",
+			"a\nb\n",
+			"@@ -0,0 +1,2 @@\n+a\n+b\n",
+		},
+		{
+			"to empty",
+			"a\n",
+			"",
+			"@@ -1 +0,0 @@\n-a\n",
+		},
 		{
 			"addition",
 			numbered(10), replaceLines(numbered(10), "5", "5\nnew"),

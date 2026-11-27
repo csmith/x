@@ -19,18 +19,66 @@ func TestWheelAccumulator_Add(t *testing.T) {
 		deltas []float32
 		want   []int
 	}{
-		{"X11 notch down", []float32{10}, []int{1}},
-		{"X11 notch up", []float32{-10}, []int{-1}},
-		{"X11 notches one at a time", []float32{10, 10, -10}, []int{1, 1, -1}},
-		{"X11 notches in one event", []float32{20}, []int{2}},
-		{"Wayland notch is capped", []float32{150}, []int{MaxWheelNotches}},
-		{"Wayland notch up is capped", []float32{-150}, []int{-MaxWheelNotches}},
-		{"capping drops the remainder", []float32{155, 5}, []int{MaxWheelNotches, 0}},
-		{"trackpad fractions add up", []float32{2.5, 2.5, 2.5, 2.5}, []int{0, 0, 0, 1}},
-		{"trackpad remainder carries over", []float32{7, 7, 7}, []int{0, 1, 1}},
-		{"trackpad upwards", []float32{-6, -6}, []int{0, -1}},
-		{"reversing drops the remainder", []float32{7, -4, -4}, []int{0, 0, 0}},
-		{"zero keeps the remainder", []float32{7, 0, 3}, []int{0, 0, 1}},
+		{
+			"X11 notch down",
+			[]float32{10},
+			[]int{1},
+		},
+		{
+			"X11 notch up",
+			[]float32{-10},
+			[]int{-1},
+		},
+		{
+			"X11 notches one at a time",
+			[]float32{10, 10, -10},
+			[]int{1, 1, -1},
+		},
+		{
+			"X11 notches in one event",
+			[]float32{20},
+			[]int{2},
+		},
+		{
+			"Wayland notch is capped",
+			[]float32{150},
+			[]int{MaxWheelNotches},
+		},
+		{
+			"Wayland notch up is capped",
+			[]float32{-150},
+			[]int{-MaxWheelNotches},
+		},
+		{
+			"capping drops the remainder",
+			[]float32{155, 5},
+			[]int{MaxWheelNotches, 0},
+		},
+		{
+			"trackpad fractions add up",
+			[]float32{2.5, 2.5, 2.5, 2.5},
+			[]int{0, 0, 0, 1},
+		},
+		{
+			"trackpad remainder carries over",
+			[]float32{7, 7, 7},
+			[]int{0, 1, 1},
+		},
+		{
+			"trackpad upwards",
+			[]float32{-6, -6},
+			[]int{0, -1},
+		},
+		{
+			"reversing drops the remainder",
+			[]float32{7, -4, -4},
+			[]int{0, 0, 0},
+		},
+		{
+			"zero keeps the remainder",
+			[]float32{7, 0, 3},
+			[]int{0, 0, 1},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(
@@ -68,8 +116,17 @@ func TestWheelList_ScrollsByItems(t *testing.T) {
 				h := newListHarness(tt.axis, tt.itemsPerNotch)
 				h.frame()
 				h.router.Queue(
-					pointer.Event{Kind: pointer.Move, Source: pointer.Mouse, Position: f32.Pt(5, 5)},
-					pointer.Event{Kind: pointer.Scroll, Source: pointer.Mouse, Position: f32.Pt(5, 5), Scroll: tt.scroll},
+					pointer.Event{
+						Kind:     pointer.Move,
+						Source:   pointer.Mouse,
+						Position: f32.Pt(5, 5),
+					},
+					pointer.Event{
+						Kind:     pointer.Scroll,
+						Source:   pointer.Mouse,
+						Position: f32.Pt(5, 5),
+						Scroll:   tt.scroll,
+					},
 				)
 				h.frame()
 				assert.Equal(t, tt.want, h.list.Position.First)
@@ -83,8 +140,17 @@ func TestWheelList_PassesClicksThrough(t *testing.T) {
 	h := newListHarness(layout.Vertical, 1)
 	h.frame()
 	h.router.Queue(
-		pointer.Event{Kind: pointer.Press, Source: pointer.Mouse, Buttons: pointer.ButtonPrimary, Position: f32.Pt(5, 25)},
-		pointer.Event{Kind: pointer.Release, Source: pointer.Mouse, Position: f32.Pt(5, 25)},
+		pointer.Event{
+			Kind:     pointer.Press,
+			Source:   pointer.Mouse,
+			Buttons:  pointer.ButtonPrimary,
+			Position: f32.Pt(5, 25),
+		},
+		pointer.Event{
+			Kind:     pointer.Release,
+			Source:   pointer.Mouse,
+			Position: f32.Pt(5, 25),
+		},
 	)
 	h.frame()
 	assert.Equal(t, 2, h.clicked)

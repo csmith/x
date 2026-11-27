@@ -19,10 +19,26 @@ func TestUTF16LE(t *testing.T) {
 		text string
 		want []byte
 	}{
-		{"empty", "", []byte{0xff, 0xfe}},
-		{"ascii", "hi", []byte{0xff, 0xfe, 'h', 0, 'i', 0}},
-		{"non-ascii", "é", []byte{0xff, 0xfe, 0xe9, 0x00}},
-		{"surrogate pair", "😀", []byte{0xff, 0xfe, 0x3d, 0xd8, 0x00, 0xde}},
+		{
+			"empty",
+			"",
+			[]byte{0xff, 0xfe},
+		},
+		{
+			"ascii",
+			"hi",
+			[]byte{0xff, 0xfe, 'h', 0, 'i', 0},
+		},
+		{
+			"non-ascii",
+			"é",
+			[]byte{0xff, 0xfe, 0xe9, 0x00},
+		},
+		{
+			"surrogate pair",
+			"😀",
+			[]byte{0xff, 0xfe, 0x3d, 0xd8, 0x00, 0xde},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(

@@ -53,11 +53,26 @@ func TestCookieSigner_Open_rejectsTampering(t *testing.T) {
 			"session",
 			base64.RawURLEncoding.EncodeToString([]byte(`{"user":"mallory"}`)) + "." + sig,
 		},
-		"a truncated signature":       {"session", encoded + "." + sig[:len(sig)-2]},
-		"no signature":                {"session", encoded},
-		"an empty value":              {"session", ""},
-		"a signature that is not b64": {"session", encoded + ".!!"},
-		"another cookie's name":       {"other", value},
+		"a truncated signature": {
+			"session",
+			encoded + "." + sig[:len(sig)-2],
+		},
+		"no signature": {
+			"session",
+			encoded,
+		},
+		"an empty value": {
+			"session",
+			"",
+		},
+		"a signature that is not b64": {
+			"session",
+			encoded + ".!!",
+		},
+		"another cookie's name": {
+			"other",
+			value,
+		},
 		"another key's signature": {
 			"session",
 			func() string {

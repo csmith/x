@@ -188,11 +188,7 @@ func TestServe_keepsCallerTimeouts(t *testing.T) {
 				}
 				require.NoError(t, Serve(ctx, server, listen(t)))
 
-				assert.Equal(
-					t,
-					tt.want,
-					timeouts{server.ReadTimeout, server.ReadHeaderTimeout, server.IdleTimeout},
-				)
+				assert.Equal(t, tt.want, timeouts{server.ReadTimeout, server.ReadHeaderTimeout, server.IdleTimeout})
 			},
 		)
 	}

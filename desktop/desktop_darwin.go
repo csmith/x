@@ -7,7 +7,9 @@ import (
 
 var openCommand = []string{"open"}
 
-var clipboardTools = [][]string{{"pbcopy"}}
+var clipboardTools = [][]string{
+	{"pbcopy"},
+}
 
 func stateDir() (string, error) {
 	return applicationSupport()

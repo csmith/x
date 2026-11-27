@@ -12,15 +12,67 @@ func TestParseFormatting(t *testing.T) {
 		text string
 		want []Span
 	}{
-		{"plain", "hello", []Span{{Text: "hello"}}},
-		{"empty", "", nil},
-		{"only codes", "\x02\x0304\x0f", nil},
-		{"bold", "a\x02b\x02c", []Span{{Text: "a"}, {Bold: true, Text: "b"}, {Text: "c"}}},
-		{"italic", "\x1da", []Span{{Italic: true, Text: "a"}}},
-		{"underline", "\x1fa", []Span{{Underline: true, Text: "a"}}},
-		{"strikethrough", "\x1ea", []Span{{Strikethrough: true, Text: "a"}}},
-		{"monospace", "\x11a", []Span{{Monospace: true, Text: "a"}}},
-		{"reverse", "\x16a", []Span{{Reverse: true, Text: "a"}}},
+		{
+			"plain",
+			"hello",
+			[]Span{
+				{Text: "hello"},
+			},
+		},
+		{
+			"empty",
+			"",
+			nil,
+		},
+		{
+			"only codes",
+			"\x02\x0304\x0f",
+			nil,
+		},
+		{
+			"bold",
+			"a\x02b\x02c",
+			[]Span{
+				{Text: "a"},
+				{Bold: true, Text: "b"},
+				{Text: "c"},
+			},
+		},
+		{
+			"italic",
+			"\x1da",
+			[]Span{
+				{Italic: true, Text: "a"},
+			},
+		},
+		{
+			"underline",
+			"\x1fa",
+			[]Span{
+				{Underline: true, Text: "a"},
+			},
+		},
+		{
+			"strikethrough",
+			"\x1ea",
+			[]Span{
+				{Strikethrough: true, Text: "a"},
+			},
+		},
+		{
+			"monospace",
+			"\x11a",
+			[]Span{
+				{Monospace: true, Text: "a"},
+			},
+		},
+		{
+			"reverse",
+			"\x16a",
+			[]Span{
+				{Reverse: true, Text: "a"},
+			},
+		},
 		{
 			"toggles combine",
 			"a\x02b\x1dc\x02d\x1d\x1fe\x1ef\x11g\x16h",
@@ -51,7 +103,13 @@ func TestParseFormatting(t *testing.T) {
 				{Foreground: "#ff0000", Text: "cd"},
 			},
 		},
-		{"single digit colour", "\x034a", []Span{{Foreground: "#ff0000", Text: "a"}}},
+		{
+			"single digit colour",
+			"\x034a",
+			[]Span{
+				{Foreground: "#ff0000", Text: "a"},
+			},
+		},
 		{
 			"two digits are always read",
 			"\x03044\x0312345",
@@ -76,8 +134,20 @@ func TestParseFormatting(t *testing.T) {
 				{Bold: true, Text: "b"},
 			},
 		},
-		{"extended colour", "\x0352a", []Span{{Foreground: "#ff0000", Text: "a"}}},
-		{"default colour", "\x0304,99a", []Span{{Foreground: "#ff0000", Text: "a"}}},
+		{
+			"extended colour",
+			"\x0352a",
+			[]Span{
+				{Foreground: "#ff0000", Text: "a"},
+			},
+		},
+		{
+			"default colour",
+			"\x0304,99a",
+			[]Span{
+				{Foreground: "#ff0000", Text: "a"},
+			},
+		},
 		{
 			"hex",
 			"\x04FF8000,000000a\x04ff0000b",
@@ -89,9 +159,19 @@ func TestParseFormatting(t *testing.T) {
 		{
 			"bare hex code resets colours",
 			"\x04ff0000a\x04b",
-			[]Span{{Foreground: "#ff0000", Text: "a"}, {Text: "b"}},
+			[]Span{
+				{Foreground: "#ff0000", Text: "a"},
+				{Text: "b"},
+			},
 		},
-		{"multi-byte text", "\x02héllo\x02 wörld", []Span{{Bold: true, Text: "héllo"}, {Text: " wörld"}}},
+		{
+			"multi-byte text",
+			"\x02héllo\x02 wörld",
+			[]Span{
+				{Bold: true, Text: "héllo"},
+				{Text: " wörld"},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(
@@ -109,21 +189,83 @@ func TestParseFormatting_malformedColours(t *testing.T) {
 		text string
 		want []Span
 	}{
-		{"colour at end", "a\x03", []Span{{Text: "a"}}},
-		{"hex at end", "a\x04", []Span{{Text: "a"}}},
-		{"comma without foreground is text", "\x03,5a", []Span{{Text: ",5a"}}},
-		{"comma without background is text", "\x034,a", []Span{{Foreground: "#ff0000", Text: ",a"}}},
-		{"trailing comma is text", "\x034,", []Span{{Foreground: "#ff0000", Text: ","}}},
-		{"third digit is text", "\x03123a", []Span{{Foreground: "#0000fc", Text: "3a"}}},
+		{
+			"colour at end",
+			"a\x03",
+			[]Span{
+				{Text: "a"},
+			},
+		},
+		{
+			"hex at end",
+			"a\x04",
+			[]Span{
+				{Text: "a"},
+			},
+		},
+		{
+			"comma without foreground is text",
+			"\x03,5a",
+			[]Span{
+				{Text: ",5a"},
+			},
+		},
+		{
+			"comma without background is text",
+			"\x034,a",
+			[]Span{
+				{Foreground: "#ff0000", Text: ",a"},
+			},
+		},
+		{
+			"trailing comma is text",
+			"\x034,",
+			[]Span{
+				{Foreground: "#ff0000", Text: ","},
+			},
+		},
+		{
+			"third digit is text",
+			"\x03123a",
+			[]Span{
+				{Foreground: "#0000fc", Text: "3a"},
+			},
+		},
 		{
 			"third background digit is text",
 			"\x031,123a",
-			[]Span{{Foreground: "#000000", Background: "#0000fc", Text: "3a"}},
+			[]Span{
+				{Foreground: "#000000", Background: "#0000fc", Text: "3a"},
+			},
 		},
-		{"short hex is text", "\x04abcb", []Span{{Text: "abcb"}}},
-		{"non-hex digits are text", "\x04ff00zz", []Span{{Text: "ff00zz"}}},
-		{"short hex background is text", "\x04ff0000,abc", []Span{{Foreground: "#ff0000", Text: ",abc"}}},
-		{"numbered background on hex is text", "\x04ff0000,12", []Span{{Foreground: "#ff0000", Text: ",12"}}},
+		{
+			"short hex is text",
+			"\x04abcb",
+			[]Span{
+				{Text: "abcb"},
+			},
+		},
+		{
+			"non-hex digits are text",
+			"\x04ff00zz",
+			[]Span{
+				{Text: "ff00zz"},
+			},
+		},
+		{
+			"short hex background is text",
+			"\x04ff0000,abc",
+			[]Span{
+				{Foreground: "#ff0000", Text: ",abc"},
+			},
+		},
+		{
+			"numbered background on hex is text",
+			"\x04ff0000,12",
+			[]Span{
+				{Foreground: "#ff0000", Text: ",12"},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(

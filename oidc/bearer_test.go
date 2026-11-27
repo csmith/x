@@ -85,7 +85,11 @@ func TestBearerVerifier_Require_acceptsAValidToken(t *testing.T) {
 func TestBearerVerifier_Require_acceptsTheSchemeInAnyCase(t *testing.T) {
 	p := oidctest.New(t, testNow)
 
-	assert.Equal(t, http.StatusOK, serve(t, newVerifier(t, p), "bearer "+p.AccessToken(testAudience, testNow, nil)).Code)
+	assert.Equal(
+		t,
+		http.StatusOK,
+		serve(t, newVerifier(t, p), "bearer "+p.AccessToken(testAudience, testNow, nil)).Code,
+	)
 }
 
 func TestBearerVerifier_Require_challengesMissingTokens(t *testing.T) {

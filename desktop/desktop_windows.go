@@ -15,7 +15,9 @@ func detachedAttr() *syscall.SysProcAttr {
 
 var openCommand = []string{"rundll32", "url.dll,FileProtocolHandler"}
 
-var clipboardTools = [][]string{{"clip.exe"}}
+var clipboardTools = [][]string{
+	{"clip.exe"},
+}
 
 // clip.exe reads UTF-8 as the console's code page, garbling non-ASCII text.
 func encodeClipboard(text string) []byte {

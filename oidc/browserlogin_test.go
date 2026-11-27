@@ -514,8 +514,11 @@ func TestBrowserLogin_callbackRejects(t *testing.T) {
 			},
 		},
 		"a refusal": {
-			code:   http.StatusForbidden,
-			target: func(h *loginHarness) string { return CallbackPath + "?error=access_denied&state=" + h.startLogin("/") },
+			code: http.StatusForbidden,
+			target: func(h *loginHarness) string {
+				return CallbackPath + "?error=access_denied&state=" +
+					h.startLogin("/")
+			},
 		},
 		"a POST": {
 			code: http.StatusMethodNotAllowed,

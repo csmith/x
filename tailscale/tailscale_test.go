@@ -34,17 +34,27 @@ func (f fakeUpper) Up(context.Context) (*ipnstate.Status, error) {
 func TestUp_returnsNameWithoutTrailingDot(t *testing.T) {
 	name, err := Up(
 		t.Context(),
-		fakeUpper{status: &ipnstate.Status{Self: &ipnstate.PeerStatus{DNSName: "node.example.ts.net."}}},
+		fakeUpper{
+			status: &ipnstate.Status{
+				Self: &ipnstate.PeerStatus{DNSName: "node.example.ts.net."},
+			},
+		},
 	)
 	require.NoError(t, err)
 	assert.Equal(t, "node.example.ts.net", name)
 }
 
 func TestUp_failsWithoutName(t *testing.T) {
-	_, err := Up(t.Context(), fakeUpper{status: &ipnstate.Status{}})
+	_, err := Up(t.Context(), fakeUpper{
+		status: &ipnstate.Status{},
+	})
 	require.Error(t, err)
 
-	_, err = Up(t.Context(), fakeUpper{status: &ipnstate.Status{Self: &ipnstate.PeerStatus{}}})
+	_, err = Up(t.Context(), fakeUpper{
+		status: &ipnstate.Status{
+			Self: &ipnstate.PeerStatus{},
+		},
+	})
 	require.Error(t, err)
 }
 

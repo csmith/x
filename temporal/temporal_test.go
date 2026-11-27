@@ -182,7 +182,14 @@ func selfSignedTLS(t *testing.T) (server, client *tls.Config) {
 
 	roots := x509.NewCertPool()
 	roots.AddCert(cert)
-	server = &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}}}
+	server = &tls.Config{
+		Certificates: []tls.Certificate{
+			{
+				Certificate: [][]byte{der},
+				PrivateKey:  key,
+			},
+		},
+	}
 	client = &tls.Config{RootCAs: roots}
 	return server, client
 }

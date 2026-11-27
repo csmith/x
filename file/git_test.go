@@ -37,13 +37,7 @@ func joinAll(root string, rels ...string) []string {
 }
 
 func TestWalkGitProjects_findsDirectoryAndFileRepos(t *testing.T) {
-	root := gitTree(
-		t,
-		"a/.git/",
-		"b/worktree/.git",
-		"c/plain/",
-		"d/file.txt",
-	)
+	root := gitTree(t, "a/.git/", "b/worktree/.git", "c/plain/", "d/file.txt")
 
 	projects, err := WalkGitProjects(root, GitWalkOptions{})
 
@@ -52,13 +46,7 @@ func TestWalkGitProjects_findsDirectoryAndFileRepos(t *testing.T) {
 }
 
 func TestWalkGitProjects_doesNotDescendIntoProjects(t *testing.T) {
-	root := gitTree(
-		t,
-		"outer/.git/",
-		"outer/inner/.git/",
-		"outer/sub/module/.git",
-		"other/.git/",
-	)
+	root := gitTree(t, "outer/.git/", "outer/inner/.git/", "outer/sub/module/.git", "other/.git/")
 
 	projects, err := WalkGitProjects(root, GitWalkOptions{})
 
@@ -76,13 +64,7 @@ func TestWalkGitProjects_rootIsProject(t *testing.T) {
 }
 
 func TestWalkGitProjects_skip(t *testing.T) {
-	root := gitTree(
-		t,
-		"keep/.git/",
-		"node_modules/dep/.git/",
-		"deep/node_modules/dep/.git/",
-		".hidden/repo/.git/",
-	)
+	root := gitTree(t, "keep/.git/", "node_modules/dep/.git/", "deep/node_modules/dep/.git/", ".hidden/repo/.git/")
 	var asked []string
 
 	projects, err := WalkGitProjects(
@@ -125,12 +107,7 @@ func TestWalkGitProjects_skipHidden(t *testing.T) {
 }
 
 func TestWalkGitProjects_maxDepth(t *testing.T) {
-	root := gitTree(
-		t,
-		"one/.git/",
-		"a/two/.git/",
-		"a/b/three/.git/",
-	)
+	root := gitTree(t, "one/.git/", "a/two/.git/", "a/b/three/.git/")
 
 	tests := []struct {
 		depth int
@@ -197,13 +174,7 @@ func TestWalkGitProjects_missingRoot(t *testing.T) {
 }
 
 func TestEnclosingGitProject_findsNearest(t *testing.T) {
-	root := gitTree(
-		t,
-		"outer/.git/",
-		"outer/src/pkg/file.go",
-		"outer/inner/.git",
-		"outer/inner/deep/",
-	)
+	root := gitTree(t, "outer/.git/", "outer/src/pkg/file.go", "outer/inner/.git", "outer/inner/deep/")
 
 	tests := []struct {
 		path string
